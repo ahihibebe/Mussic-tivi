@@ -1,0 +1,6 @@
+{
+  "name": "TV Music",
+  "description": "Ứng dụng nghe nhạc cao cấp trên Android TV, hỗ trợ nhiều định dạng âm thanh (FLAC, MP3, WAV, AAC, OGG) và duyệt thư mục trực tiếp trên máy hoặc USB.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
