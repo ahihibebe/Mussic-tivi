@@ -25,17 +25,27 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
+      # Tự động tìm vị trí của file gradlew và cấp quyền chạy
       - name: Grant Execute Permission for Gradle
-        run: chmod +x gradlew
+        run: |
+          GRADLEW_PATH=$(find . -name gradlew -print -quit)
+          if [ -z "$GRADLEW_PATH" ]; then
+            echo "❌ Không tìm thấy file gradlew trong toàn bộ dự án!"
+            exit 1
+          fi
+          echo "Found gradlew at: $GRADLEW_PATH"
+          chmod +x "$GRADLEW_PATH"
+          echo "PROJECT_DIR=$(dirname "$GRADLEW_PATH")" >> $GITHUB_ENV
 
+      # Di chuyển vào đúng thư mục chứa dự án để chạy lệnh build
       - name: Assemble Debug Build
-        run: ./gradlew assembleDebug
+        run: |
+          cd ${{ env.PROJECT_DIR }}
+          ./gradlew assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          # Sử dụng ký tự đại diện (wildcard **) để tự động tìm kiếm file APK 
-          # bất kể cấu trúc thư mục của bạn có bị thay đổi tên
           path: "**/build/outputs/apk/debug/*.apk"
           if-no-files-found: error
