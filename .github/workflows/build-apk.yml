@@ -37,6 +37,20 @@ jobs:
           chmod +x "$GRADLEW_PATH"
           echo "PROJECT_DIR=$(dirname "$GRADLEW_PATH")" >> $GITHUB_ENV
 
+      # Chuẩn bị file debug.keystore để ký APK (từ base64 hoặc tạo mới nếu chưa có)
+      - name: Setup debug.keystore
+        run: |
+          cd ${{ env.PROJECT_DIR }}
+          if [ -f "debug.keystore.base64" ] && [ ! -f "debug.keystore" ]; then
+            echo "Khôi phục debug.keystore từ debug.keystore.base64..."
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
+          if [ ! -f "debug.keystore" ]; then
+            echo "Tạo mới debug.keystore..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          ls -la debug.keystore
+
       # Di chuyển vào đúng thư mục chứa dự án để chạy lệnh build
       - name: Assemble Debug Build
         run: |
