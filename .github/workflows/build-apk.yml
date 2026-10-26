@@ -2,45 +2,38 @@ name: Android CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
 
 jobs:
   build:
-    # 1. Sử dụng ubuntu-latest để có GLIBC mới nhất phù hợp với Gradle 9.x
+    name: Build Debug APK
     runs-on: ubuntu-latest
 
-    # 2. Ép buộc Gradle tắt Native Services trên toàn bộ các bước chạy
     env:
+      # Tắt Native Services để tránh crash lỗi khởi động trên Gradle 9.8.1
       GRADLE_OPTS: "-Dorg.gradle.native=false"
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    # 3. Thiết lập Java 17 chuẩn xác
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: 'gradle' # Tự động cache giúp build nhanh hơn ở các lần sau
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
 
-    # 4. Cấp quyền thực thi cho Gradle Wrapper
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+      - name: Grant Execute Permission for Gradle
+        run: chmod +x gradlew
 
-    # 5. Chạy lệnh assembleDebug (Lúc này không còn bị sập nữa)
-    - name: Build with Gradle
-      run: ./gradlew assembleDebug
-    # 5. Chạy lệnh assembleDebug
-    - name: Build with Gradle
-      run: ./gradlew assembleDebug
+      - name: Assemble Debug Build
+        run: ./gradlew assembleDebug
 
-    # 6. DÁN ĐOẠN NÀY VÀO CUỐI FILE ĐỂ XUẤT FILE APK
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-debug-apk
-        path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
