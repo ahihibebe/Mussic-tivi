@@ -10,6 +10,7 @@ import com.example.model.AudioFolder
 import com.example.model.AudioTrack
 import com.example.model.CoverArtStyle
 import com.example.model.SortOption
+import com.example.model.WifiMusicRole
 import com.example.scanner.StorageScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +55,9 @@ class MusicRepository(private val context: Context) {
 
     private val _coverArtStyle = MutableStateFlow(loadCoverArtStyle())
     val coverArtStyle: StateFlow<CoverArtStyle> = _coverArtStyle.asStateFlow()
+
+    private val _wifiMusicRole = MutableStateFlow(loadWifiMusicRole())
+    val wifiMusicRole: StateFlow<WifiMusicRole> = _wifiMusicRole.asStateFlow()
 
     suspend fun refreshLibrary() = withContext(Dispatchers.IO) {
         _isScanning.value = true
@@ -213,6 +217,19 @@ class MusicRepository(private val context: Context) {
         prefs.edit().putString("cover_art_style", style.name).apply()
     }
 
+    fun setWifiMusicRole(role: WifiMusicRole) {
+        _wifiMusicRole.value = role
+        prefs.edit().putString("wifi_music_role", role.name).apply()
+    }
+
+    fun getLastPhoneServerUrl(): String {
+        return prefs.getString("last_phone_server_url", "") ?: ""
+    }
+
+    fun setLastPhoneServerUrl(url: String) {
+        prefs.edit().putString("last_phone_server_url", url).apply()
+    }
+
     private fun loadFavorites(): Set<String> {
         val set = prefs.getStringSet("favorite_ids", emptySet()) ?: emptySet()
         return set.toSet()
@@ -243,5 +260,10 @@ class MusicRepository(private val context: Context) {
     private fun loadCoverArtStyle(): CoverArtStyle {
         val name = prefs.getString("cover_art_style", CoverArtStyle.SPINNING_DISC.name)
         return CoverArtStyle.entries.find { it.name == name } ?: CoverArtStyle.SPINNING_DISC
+    }
+
+    private fun loadWifiMusicRole(): WifiMusicRole {
+        val name = prefs.getString("wifi_music_role", WifiMusicRole.TV_CLIENT_PULL_PHONE.name)
+        return WifiMusicRole.entries.find { it.name == name } ?: WifiMusicRole.TV_CLIENT_PULL_PHONE
     }
 }

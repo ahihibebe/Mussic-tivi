@@ -4,24 +4,29 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import com.example.model.AudioTrack
 import com.example.model.CoverArtStyle
+import com.example.model.WifiMusicRole
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.io.RandomAccessFile
+import java.net.DatagramPacket
+import java.net.DatagramSocket
 import java.net.Inet4Address
+import java.net.InetAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
@@ -44,6 +49,7 @@ class LocalBackgroundServer(
     private val context: Context,
     private val getTracks: () -> List<AudioTrack> = { emptyList() },
     private val getCoverArtStyle: () -> CoverArtStyle = { CoverArtStyle.SPINNING_DISC },
+    private val getRole: () -> WifiMusicRole = { WifiMusicRole.TV_WEB_HUB },
     private val getTvStatus: () -> TvPlaybackSnapshot = { TvPlaybackSnapshot() },
     private val onPlayTrackOnTv: (String) -> Unit = {},
     private val onTvControl: (String) -> Unit = {},
@@ -54,6 +60,7 @@ class LocalBackgroundServer(
 ) {
     private var serverSocket: ServerSocket? = null
     private var acceptJob: Job? = null
+    private var broadcastJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     @Volatile
@@ -82,7 +89,7 @@ class LocalBackgroundServer(
         serverUrl = url
 
         onStatusUpdate("Đang mở máy chủ Wi-Fi tại $url")
-        onClientActivity("Đang chờ điện thoại quét mã QR hoặc truy cập $url")
+        onClientActivity("Sẵn sàng tại $url")
 
         acceptJob = scope.launch {
             while (isActive && !socket.isClosed) {
@@ -96,6 +103,15 @@ class LocalBackgroundServer(
                 }
             }
         }
+
+        broadcastJob = scope.launch {
+            while (isActive && !socket.isClosed) {
+                if (getRole() == WifiMusicRole.PHONE_SERVER_HOST) {
+                    sendDiscoveryBeacon(url, port, getTracks().size)
+                }
+                delay(1800L)
+            }
+        }
         return url
     }
 
@@ -103,12 +119,48 @@ class LocalBackgroundServer(
     fun stop() {
         acceptJob?.cancel()
         acceptJob = null
+        broadcastJob?.cancel()
+        broadcastJob = null
         try {
             serverSocket?.close()
         } catch (ignored: Exception) {
         }
         serverSocket = null
         serverUrl = null
+    }
+
+    private fun sendDiscoveryBeacon(url: String, port: Int, tracksCount: Int) {
+        try {
+            val deviceName = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}"
+                .replace("|", " ")
+                .trim()
+                .ifBlank { "Android Phone" }
+            val payload = "TVMUSIC_DISCOVER|1|$url|$deviceName|$tracksCount|PHONE_SERVER|$port"
+            val bytes = payload.toByteArray(StandardCharsets.UTF_8)
+            DatagramSocket().use { udp ->
+                udp.broadcast = true
+                val packet = DatagramPacket(
+                    bytes,
+                    bytes.size,
+                    InetAddress.getByName("255.255.255.255"),
+                    DISCOVERY_UDP_PORT
+                )
+                udp.send(packet)
+
+                // Also send to each interface directed broadcast for routers blocking 255.255.255.255
+                NetworkInterface.getNetworkInterfaces()?.toList().orEmpty().forEach { intf ->
+                    if (!intf.isUp || intf.isLoopback) return@forEach
+                    intf.interfaceAddresses.forEach { ia ->
+                        val bcast = ia.broadcast ?: return@forEach
+                        try {
+                            udp.send(DatagramPacket(bytes, bytes.size, bcast, DISCOVERY_UDP_PORT))
+                        } catch (ignored: Exception) {
+                        }
+                    }
+                }
+            }
+        } catch (ignored: Exception) {
+        }
     }
 
     private fun handleClient(client: Socket) {
@@ -156,8 +208,24 @@ class LocalBackgroundServer(
                         )
                     }
 
+                    method == "GET" && path == "/api/server-info" -> {
+                        val deviceName = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}".trim()
+                        val roleStr = if (getRole() == WifiMusicRole.PHONE_SERVER_HOST) "PHONE_SERVER" else "TV_HUB"
+                        val port = serverSocket?.localPort ?: 8765
+                        val url = serverUrl ?: ""
+                        val json = """{"app":"TVMusic","deviceName":"${escapeJson(deviceName)}","role":"$roleStr","tracksCount":${getTracks().size},"port":$port,"url":"${escapeJson(url)}"}"""
+                        sendResponse(
+                            output,
+                            200,
+                            "OK",
+                            "application/json; charset=utf-8",
+                            json.toByteArray(StandardCharsets.UTF_8)
+                        )
+                    }
+
                     method == "GET" && path == "/api/tracks" -> {
                         val tracks = getTracks()
+                        onClientActivity("Thiết bị từ Wi-Fi đã quét ${tracks.size} bài hát")
                         val json = buildTracksJson(
                             tracks = tracks,
                             coverArtStyle = getCoverArtStyle(),
@@ -632,36 +700,39 @@ class LocalBackgroundServer(
         output.flush()
     }
 
-    private fun getLocalIpv4Address(): String? {
-        return try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
-            val candidates = mutableListOf<Pair<Int, String>>()
-            for (intf in interfaces) {
-                if (!intf.isUp || intf.isLoopback) continue
-                val name = intf.name.lowercase(Locale.ROOT)
-                val priority = when {
-                    name.startsWith("wlan") || name.startsWith("wifi") || name.startsWith("ap") -> 0
-                    name.startsWith("eth") || name.startsWith("en") -> 1
-                    name.startsWith("tun") || name.startsWith("ppp") -> 4
-                    else -> 2
-                }
-                for (addr in intf.inetAddresses.toList()) {
-                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
-                        val host = addr.hostAddress ?: continue
-                        if (!host.startsWith("127.")) {
-                            val privateBonus = if (host.startsWith("192.168.") || host.startsWith("10.")) 0 else 1
-                            candidates.add((priority * 10 + privateBonus) to host)
+    companion object {
+        const val DEFAULT_HTTP_PORT = 8765
+        const val DISCOVERY_UDP_PORT = 8766
+
+        fun getLocalIpv4Address(): String? {
+            return try {
+                val interfaces = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
+                val candidates = mutableListOf<Pair<Int, String>>()
+                for (intf in interfaces) {
+                    if (!intf.isUp || intf.isLoopback) continue
+                    val name = intf.name.lowercase(Locale.ROOT)
+                    val priority = when {
+                        name.startsWith("wlan") || name.startsWith("wifi") || name.startsWith("ap") -> 0
+                        name.startsWith("eth") || name.startsWith("en") -> 1
+                        name.startsWith("tun") || name.startsWith("ppp") -> 4
+                        else -> 2
+                    }
+                    for (addr in intf.inetAddresses.toList()) {
+                        if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                            val host = addr.hostAddress ?: continue
+                            if (!host.startsWith("127.")) {
+                                val privateBonus = if (host.startsWith("192.168.") || host.startsWith("10.")) 0 else 1
+                                candidates.add((priority * 10 + privateBonus) to host)
+                            }
                         }
                     }
                 }
+                candidates.minByOrNull { it.first }?.second
+            } catch (e: Exception) {
+                null
             }
-            candidates.minByOrNull { it.first }?.second
-        } catch (e: Exception) {
-            null
         }
-    }
 
-    companion object {
         val SUPPORTED_AUDIO_EXTENSIONS = setOf(
             "mp3", "flac", "wav", "aac", "m4a", "ogg", "opus", "wma"
         )

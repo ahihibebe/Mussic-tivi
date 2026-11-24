@@ -4,11 +4,14 @@ import com.example.model.AppUiStyle
 import com.example.model.AudioTrack
 import com.example.model.CoverArtStyle
 import com.example.model.TvNavTab
+import com.example.model.WifiMusicRole
+import com.example.qr.LanMusicDiscoveryClient
 import com.example.qr.LocalBackgroundServer
 import com.example.qr.TvPlaybackSnapshot
 import com.example.ui.theme.buildTvStyleTokens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -104,5 +107,47 @@ class ExampleUnitTest {
     assertTrue(json.contains("\"id\":\"ms_42\""))
     assertTrue(json.contains("\\\"Quote\\\""))
     assertTrue(json.contains("\"hasCover\":true"))
+  }
+
+  @Test
+  fun phoneServerDiscoveryAndRemoteTrackParsingWorkWithoutFileUpload() {
+    assertEquals(3, WifiMusicRole.entries.size)
+    assertEquals("http://192.168.1.25:8765", LanMusicDiscoveryClient.normalizeServerUrl("192.168.1.25"))
+    assertEquals("http://192.168.1.25:9000", LanMusicDiscoveryClient.normalizeServerUrl("http://192.168.1.25:9000/"))
+
+    val discovered = LanMusicDiscoveryClient.parseDiscoveryPacket(
+      "TVMUSIC_DISCOVER|1|http://192.168.1.25:8765|Galaxy S24|88|PHONE_SERVER|8765"
+    )
+    assertNotNull(discovered)
+    assertEquals("Galaxy S24", discovered!!.deviceName)
+    assertEquals(88, discovered.tracksCount)
+    assertEquals("http://192.168.1.25:8765", discovered.url)
+
+    val sourceTrack = AudioTrack(
+      id = "ms_99",
+      title = "Acoustic Live",
+      artist = "Phone Artist",
+      album = "Phone Album",
+      durationMs = 210000L,
+      filePath = "/storage/emulated/0/Music/live.flac",
+      format = "FLAC",
+      bitrate = "Lossless",
+      albumArtUri = "/cache/art.jpg"
+    )
+    val payload = LocalBackgroundServer.buildTracksJson(
+      tracks = listOf(sourceTrack),
+      coverArtStyle = CoverArtStyle.SPINNING_DISC,
+      tvStatus = TvPlaybackSnapshot()
+    )
+    val remoteTracks = LanMusicDiscoveryClient.parseTracksPayload(
+      json = payload,
+      serverUrl = "192.168.1.25",
+      serverName = "Galaxy S24"
+    )
+    assertEquals(1, remoteTracks.size)
+    val remote = remoteTracks.first()
+    assertEquals("Acoustic Live", remote.title)
+    assertEquals("http://192.168.1.25:8765/api/stream?id=ms_99", remote.contentUri)
+    assertEquals("http://192.168.1.25:8765/api/cover?id=ms_99", remote.albumArtUri)
   }
 }

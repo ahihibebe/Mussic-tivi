@@ -265,7 +265,7 @@ class AudioPlaybackManager(private val context: Context) {
     }
 
     private fun applyPlaybackSpeed() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && _playbackSpeed.value != 1.0f) {
             mediaPlayer?.let { mp ->
                 try {
                     val params = mp.playbackParams

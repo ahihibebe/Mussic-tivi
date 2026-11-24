@@ -155,10 +155,18 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
     val isQrDialogVisible by viewModel.isQrDialogVisible.collectAsStateWithLifecycle()
     val qrServerUrl by viewModel.qrServerUrl.collectAsStateWithLifecycle()
     val qrUploadStatus by viewModel.qrUploadStatus.collectAsStateWithLifecycle()
+    val wifiMusicRole by viewModel.wifiMusicRole.collectAsStateWithLifecycle()
     val isWifiServerRunning by viewModel.isWifiServerRunning.collectAsStateWithLifecycle()
     val wifiServerUrl by viewModel.wifiServerUrl.collectAsStateWithLifecycle()
     val wifiActivityStatus by viewModel.wifiActivityStatus.collectAsStateWithLifecycle()
     val wifiTracks by viewModel.wifiTracks.collectAsStateWithLifecycle()
+    val discoveredPhoneServers by viewModel.discoveredPhoneServers.collectAsStateWithLifecycle()
+    val isScanningLanServers by viewModel.isScanningLanServers.collectAsStateWithLifecycle()
+    val connectedPhoneServer by viewModel.connectedPhoneServer.collectAsStateWithLifecycle()
+    val remotePhoneTracks by viewModel.remotePhoneTracks.collectAsStateWithLifecycle()
+    val isLoadingRemoteTracks by viewModel.isLoadingRemoteTracks.collectAsStateWithLifecycle()
+    val remoteError by viewModel.remoteError.collectAsStateWithLifecycle()
+    val manualServerIp by viewModel.manualServerIp.collectAsStateWithLifecycle()
 
     // Storage permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -395,16 +403,29 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
 
                         TvNavTab.WIFI_PHONE -> {
                             WifiPhoneScreen(
+                                wifiMusicRole = wifiMusicRole,
                                 isServerRunning = isWifiServerRunning,
                                 serverUrl = wifiServerUrl,
                                 activityStatus = wifiActivityStatus,
                                 totalTracksCount = allTracks.size,
                                 wifiTracks = wifiTracks,
+                                discoveredServers = discoveredPhoneServers,
+                                isScanningServers = isScanningLanServers,
+                                connectedPhoneServer = connectedPhoneServer,
+                                remoteTracks = remotePhoneTracks,
+                                isLoadingRemoteTracks = isLoadingRemoteTracks,
+                                remoteError = remoteError,
+                                manualServerIp = manualServerIp,
                                 currentTrack = currentTrack,
                                 isPlaying = isPlaying,
                                 coverArtStyle = coverArtStyle,
+                                onSelectRole = { viewModel.setWifiMusicRole(it) },
                                 onToggleServer = { viewModel.toggleWifiMusicServer() },
                                 onRefreshLibrary = { viewModel.scanLibrary() },
+                                onScanLanServers = { viewModel.scanLanPhoneServers() },
+                                onManualIpChanged = { viewModel.setManualServerIp(it) },
+                                onConnectToServer = { viewModel.connectToPhoneServer(it) },
+                                onDisconnectRemoteServer = { viewModel.disconnectRemotePhoneServer() },
                                 onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
                                 onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) }
                             )

@@ -102,3 +102,18 @@ enum class CoverArtStyle(val title: String, val subtitle: String) {
     )
 }
 
+enum class WifiMusicRole(val title: String, val subtitle: String) {
+    TV_CLIENT_PULL_PHONE(
+        title = "Lấy nhạc trực tiếp từ ĐT",
+        subtitle = "Quét & phát thẳng nhạc trên điện thoại không cần gửi file lên TV"
+    ),
+    PHONE_SERVER_HOST(
+        title = "Đặt máy này làm Server nhạc",
+        subtitle = "Chia sẻ trực tiếp kho nhạc trên máy này để TV quét & phát"
+    ),
+    TV_WEB_HUB(
+        title = "Quét QR trên trình duyệt ĐT",
+        subtitle = "Mở Safari/Chrome trên ĐT để nghe nhạc TV hoặc điều khiển từ xa"
+    )
+}
+

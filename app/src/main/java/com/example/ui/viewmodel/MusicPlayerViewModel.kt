@@ -13,9 +13,13 @@ import com.example.model.CoverArtStyle
 import com.example.model.EqualizerPreset
 import com.example.model.SortOption
 import com.example.model.TvNavTab
+import com.example.model.WifiMusicRole
+import com.example.qr.DiscoveredPhoneServer
+import com.example.qr.LanMusicDiscoveryClient
 import com.example.qr.LocalBackgroundServer
 import com.example.qr.TvPlaybackSnapshot
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -53,6 +57,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val backgroundOpacity = repository.backgroundOpacity
     val glassBlurRadius = repository.glassBlurRadius
     val coverArtStyle = repository.coverArtStyle
+    val wifiMusicRole = repository.wifiMusicRole
 
     private val _isQrDialogVisible = MutableStateFlow(false)
     val isQrDialogVisible: StateFlow<Boolean> = _isQrDialogVisible.asStateFlow()
@@ -65,6 +70,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     // Wi-Fi Phone Streaming & Remote Hub State
     private var isWifiMusicPinned = false
+    private var udpDiscoveryJob: Job? = null
 
     private val _isWifiServerRunning = MutableStateFlow(false)
     val isWifiServerRunning: StateFlow<Boolean> = _isWifiServerRunning.asStateFlow()
@@ -72,8 +78,30 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _wifiServerUrl = MutableStateFlow<String?>(null)
     val wifiServerUrl: StateFlow<String?> = _wifiServerUrl.asStateFlow()
 
-    private val _wifiActivityStatus = MutableStateFlow("Bật máy chủ để phát nhạc trên điện thoại cùng Wi-Fi")
+    private val _wifiActivityStatus = MutableStateFlow("Chọn chế độ kết nối Wi-Fi bên trên")
     val wifiActivityStatus: StateFlow<String> = _wifiActivityStatus.asStateFlow()
+
+    // Remote Phone Server Discovery & Direct Streaming (Zero-Upload)
+    private val _discoveredPhoneServers = MutableStateFlow<List<DiscoveredPhoneServer>>(emptyList())
+    val discoveredPhoneServers: StateFlow<List<DiscoveredPhoneServer>> = _discoveredPhoneServers.asStateFlow()
+
+    private val _isScanningLanServers = MutableStateFlow(false)
+    val isScanningLanServers: StateFlow<Boolean> = _isScanningLanServers.asStateFlow()
+
+    private val _connectedPhoneServer = MutableStateFlow<DiscoveredPhoneServer?>(null)
+    val connectedPhoneServer: StateFlow<DiscoveredPhoneServer?> = _connectedPhoneServer.asStateFlow()
+
+    private val _remotePhoneTracks = MutableStateFlow<List<AudioTrack>>(emptyList())
+    val remotePhoneTracks: StateFlow<List<AudioTrack>> = _remotePhoneTracks.asStateFlow()
+
+    private val _isLoadingRemoteTracks = MutableStateFlow(false)
+    val isLoadingRemoteTracks: StateFlow<Boolean> = _isLoadingRemoteTracks.asStateFlow()
+
+    private val _remoteError = MutableStateFlow<String?>(null)
+    val remoteError: StateFlow<String?> = _remoteError.asStateFlow()
+
+    private val _manualServerIp = MutableStateFlow(repository.getLastPhoneServerUrl())
+    val manualServerIp: StateFlow<String> = _manualServerIp.asStateFlow()
 
     // Repository flows
     val allTracks = repository.allTracks
@@ -98,6 +126,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         context = application,
         getTracks = { allTracks.value },
         getCoverArtStyle = { coverArtStyle.value },
+        getRole = { wifiMusicRole.value },
         getTvStatus = {
             val t = currentTrack.value
             TvPlaybackSnapshot(
@@ -201,9 +230,122 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun selectTab(tab: TvNavTab) {
         _currentTab.value = tab
-        if (tab == TvNavTab.WIFI_PHONE && !_isWifiServerRunning.value) {
-            startWifiMusicServer()
+        if (tab == TvNavTab.WIFI_PHONE) {
+            activateCurrentWifiRole()
         }
+    }
+
+    fun setWifiMusicRole(role: WifiMusicRole) {
+        repository.setWifiMusicRole(role)
+        activateCurrentWifiRole()
+    }
+
+    private fun activateCurrentWifiRole() {
+        when (wifiMusicRole.value) {
+            WifiMusicRole.TV_CLIENT_PULL_PHONE -> {
+                startLanDiscoveryListener()
+                if (_discoveredPhoneServers.value.isEmpty() && !_isScanningLanServers.value) {
+                    scanLanPhoneServers()
+                }
+            }
+            WifiMusicRole.PHONE_SERVER_HOST -> {
+                stopLanDiscoveryListener()
+                if (!_isWifiServerRunning.value) {
+                    startWifiMusicServer()
+                } else {
+                    _wifiActivityStatus.value = "Đang làm Máy chủ nhạc (${allTracks.value.size} bài) — TV có thể quét & phát trực tiếp"
+                }
+            }
+            WifiMusicRole.TV_WEB_HUB -> {
+                stopLanDiscoveryListener()
+                if (!_isWifiServerRunning.value) {
+                    startWifiMusicServer()
+                }
+            }
+        }
+    }
+
+    private fun startLanDiscoveryListener() {
+        if (udpDiscoveryJob?.isActive == true) return
+        udpDiscoveryJob = viewModelScope.launch(Dispatchers.IO) {
+            val ownIp = LocalBackgroundServer.getLocalIpv4Address()
+            LanMusicDiscoveryClient.listenUdpBeacons(ownIp) { discovered ->
+                mergeDiscoveredServer(discovered)
+            }
+        }
+    }
+
+    private fun stopLanDiscoveryListener() {
+        udpDiscoveryJob?.cancel()
+        udpDiscoveryJob = null
+    }
+
+    private fun mergeDiscoveredServer(server: DiscoveredPhoneServer) {
+        val current = _discoveredPhoneServers.value.toMutableList()
+        val idx = current.indexOfFirst { it.url == server.url }
+        if (idx >= 0) {
+            current[idx] = server
+        } else {
+            current.add(0, server)
+        }
+        _discoveredPhoneServers.value = current
+    }
+
+    fun scanLanPhoneServers() {
+        if (_isScanningLanServers.value) return
+        viewModelScope.launch {
+            _isScanningLanServers.value = true
+            _remoteError.value = null
+            try {
+                val ownIp = LocalBackgroundServer.getLocalIpv4Address()
+                val found = LanMusicDiscoveryClient.scanSubnetForPhoneServers(ownIp = ownIp)
+                found.forEach { mergeDiscoveredServer(it) }
+                if (_discoveredPhoneServers.value.isEmpty()) {
+                    _remoteError.value = "Chưa tìm thấy điện thoại nào đang bật chế độ \"Đặt máy này làm Server nhạc\" trong cùng Wi-Fi."
+                }
+            } catch (e: Exception) {
+                _remoteError.value = "Lỗi quét mạng Wi-Fi: ${e.message}"
+            } finally {
+                _isScanningLanServers.value = false
+            }
+        }
+    }
+
+    fun setManualServerIp(value: String) {
+        _manualServerIp.value = value
+    }
+
+    fun connectToPhoneServer(rawUrl: String) {
+        val normalized = LanMusicDiscoveryClient.normalizeServerUrl(rawUrl)
+        if (normalized.isBlank()) {
+            _remoteError.value = "Vui lòng nhập địa chỉ IP của điện thoại (ví dụ: 192.168.1.15)"
+            return
+        }
+        viewModelScope.launch {
+            _isLoadingRemoteTracks.value = true
+            _remoteError.value = null
+            try {
+                val result = LanMusicDiscoveryClient.fetchRemoteLibrary(normalized)
+                _connectedPhoneServer.value = result.server
+                _remotePhoneTracks.value = result.tracks
+                _manualServerIp.value = normalized
+                repository.setLastPhoneServerUrl(normalized)
+                mergeDiscoveredServer(result.server)
+                if (result.tracks.isEmpty()) {
+                    _remoteError.value = "Đã kết nối ${result.server.deviceName} nhưng chưa thấy bài hát nào trên điện thoại."
+                }
+            } catch (e: Exception) {
+                _remoteError.value = "Không thể kết nối tới $normalized (${e.message ?: "Kiểm tra cùng Wi-Fi & bật Server trên ĐT"})"
+            } finally {
+                _isLoadingRemoteTracks.value = false
+            }
+        }
+    }
+
+    fun disconnectRemotePhoneServer() {
+        _connectedPhoneServer.value = null
+        _remotePhoneTracks.value = emptyList()
+        _remoteError.value = null
     }
 
     fun openFolder(folder: AudioFolder) {
@@ -280,7 +422,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 val baseUrl = localServer.start()
                 _wifiServerUrl.value = "$baseUrl/?tab=play"
                 _isWifiServerRunning.value = true
-                _wifiActivityStatus.value = "Sẵn sàng — Quét QR bằng điện thoại cùng Wi-Fi để nghe nhạc"
+                _wifiActivityStatus.value = if (wifiMusicRole.value == WifiMusicRole.PHONE_SERVER_HOST) {
+                    "Đang chia sẻ trực tiếp ${allTracks.value.size} bài hát — TV cùng Wi-Fi sẽ tự tìm thấy máy này"
+                } else {
+                    "Sẵn sàng — Quét QR bằng điện thoại cùng Wi-Fi để nghe nhạc"
+                }
             } catch (e: Exception) {
                 isWifiMusicPinned = false
                 _isWifiServerRunning.value = false
@@ -362,6 +508,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     override fun onCleared() {
         super.onCleared()
+        stopLanDiscoveryListener()
         localServer.stop()
         playbackManager.release()
     }
