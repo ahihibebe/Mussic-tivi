@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.AudioTrack
+import com.example.model.CoverArtStyle
 import com.example.model.SortOption
 import com.example.ui.components.tvFocusable
 import com.example.ui.theme.LocalTvStyle
@@ -50,6 +51,7 @@ fun SongsListScreen(
     searchQuery: String,
     selectedFormat: String,
     sortOption: SortOption,
+    coverArtStyle: CoverArtStyle = CoverArtStyle.SPINNING_DISC,
     onSearchChanged: (String) -> Unit,
     onFormatSelected: (String) -> Unit,
     onSortChanged: (SortOption) -> Unit,
@@ -284,6 +286,7 @@ fun SongsListScreen(
                         track = track,
                         isCurrent = isCurrentlyPlaying,
                         isPlaying = isCurrentlyPlaying && isPlaying,
+                        coverArtStyle = coverArtStyle,
                         onPlay = { onPlayTrack(track, tracks) },
                         onToggleFavorite = { onToggleFavorite(track.id) }
                     )

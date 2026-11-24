@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Mouse
@@ -54,7 +56,9 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.model.AppUiStyle
+import com.example.model.CoverArtStyle
 import com.example.model.EqualizerPreset
+import com.example.ui.components.AlbumCoverView
 import com.example.ui.components.tvFocusable
 import com.example.ui.theme.AppleTvAccent
 import com.example.ui.theme.AppleTvDeepBg
@@ -69,6 +73,7 @@ import kotlin.math.roundToInt
 @Composable
 fun SettingsScreen(
     uiStyle: AppUiStyle,
+    coverArtStyle: CoverArtStyle = CoverArtStyle.SPINNING_DISC,
     customBackgroundPath: String?,
     backgroundOpacity: Float,
     glassBlurRadius: Float,
@@ -78,6 +83,7 @@ fun SettingsScreen(
     totalFoldersCount: Int,
     isScanning: Boolean,
     onSetUiStyle: (AppUiStyle) -> Unit,
+    onSetCoverArtStyle: (CoverArtStyle) -> Unit = {},
     onSetBackgroundOpacity: (Float) -> Unit,
     onSetGlassBlurRadius: (Float) -> Unit,
     onOpenQrBackground: () -> Unit,
@@ -226,7 +232,42 @@ fun SettingsScreen(
             }
         }
 
-        // Section 2: Custom Background Image via Phone QR & Transparency
+        // Section 2: Album Cover Display Style (Rounded Square vs Spinning Disc)
+        item {
+            SettingsCard(
+                title = "Kiểu hiển thị ảnh cover bài hát",
+                subtitle = "Tùy chọn ảnh bìa hình vuông bo góc nhẹ hoặc hình tròn đĩa xoay cổ điển",
+                icon = Icons.Default.Album,
+                iconColor = style.accentColor
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    CoverStylePreviewCard(
+                        title = CoverArtStyle.ROUNDED_SQUARE.title,
+                        subtitle = CoverArtStyle.ROUNDED_SQUARE.subtitle,
+                        previewStyle = CoverArtStyle.ROUNDED_SQUARE,
+                        isSelected = coverArtStyle == CoverArtStyle.ROUNDED_SQUARE,
+                        tag = "settings_cover_square",
+                        onClick = { onSetCoverArtStyle(CoverArtStyle.ROUNDED_SQUARE) },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    CoverStylePreviewCard(
+                        title = CoverArtStyle.SPINNING_DISC.title,
+                        subtitle = CoverArtStyle.SPINNING_DISC.subtitle,
+                        previewStyle = CoverArtStyle.SPINNING_DISC,
+                        isSelected = coverArtStyle == CoverArtStyle.SPINNING_DISC,
+                        tag = "settings_cover_disc",
+                        onClick = { onSetCoverArtStyle(CoverArtStyle.SPINNING_DISC) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        // Section 3: Custom Background Image via Phone QR & Transparency
         item {
             SettingsCard(
                 title = "Ảnh nền TV & Gửi qua mã QR điện thoại",
@@ -815,6 +856,80 @@ private fun StylePreviewCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = if (isAppleTvPreview) Icons.Default.AutoAwesome else Icons.Default.WbSunny,
+                    contentDescription = null,
+                    tint = if (isSelected) style.accentColor else style.textSecondary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = title,
+                    color = style.textPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                color = style.textSecondary,
+                fontSize = 11.sp
+            )
+        }
+
+        if (isSelected) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = "Đang chọn",
+                tint = style.accentColor,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun CoverStylePreviewCard(
+    title: String,
+    subtitle: String,
+    previewStyle: CoverArtStyle,
+    isSelected: Boolean,
+    tag: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val style = LocalTvStyle.current
+
+    Row(
+        modifier = modifier
+            .tvFocusable(
+                tag = tag,
+                shape = RoundedCornerShape(14.dp),
+                defaultBgColor = if (isSelected) style.selectedPillSurface else style.surfaceVariant,
+                defaultBorderColor = if (isSelected) style.accentColor else style.borderColor,
+                onClick = onClick
+            )
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AlbumCoverView(
+            albumArtUri = null,
+            coverStyle = previewStyle,
+            isPlaying = previewStyle == CoverArtStyle.SPINNING_DISC,
+            size = 48.dp,
+            cornerRadius = 10.dp
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (previewStyle == CoverArtStyle.SPINNING_DISC) {
+                        Icons.Default.Album
+                    } else {
+                        Icons.Default.CropSquare
+                    },
                     contentDescription = null,
                     tint = if (isSelected) style.accentColor else style.textSecondary,
                     modifier = Modifier.size(16.dp)

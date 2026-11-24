@@ -8,6 +8,7 @@ import android.net.Uri
 import com.example.model.AppUiStyle
 import com.example.model.AudioFolder
 import com.example.model.AudioTrack
+import com.example.model.CoverArtStyle
 import com.example.model.SortOption
 import com.example.scanner.StorageScanner
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +51,9 @@ class MusicRepository(private val context: Context) {
 
     private val _glassBlurRadius = MutableStateFlow(loadGlassBlurRadius())
     val glassBlurRadius: StateFlow<Float> = _glassBlurRadius.asStateFlow()
+
+    private val _coverArtStyle = MutableStateFlow(loadCoverArtStyle())
+    val coverArtStyle: StateFlow<CoverArtStyle> = _coverArtStyle.asStateFlow()
 
     suspend fun refreshLibrary() = withContext(Dispatchers.IO) {
         _isScanning.value = true
@@ -200,6 +204,11 @@ class MusicRepository(private val context: Context) {
         prefs.edit().putFloat("glass_blur", clamped).apply()
     }
 
+    fun setCoverArtStyle(style: CoverArtStyle) {
+        _coverArtStyle.value = style
+        prefs.edit().putString("cover_art_style", style.name).apply()
+    }
+
     private fun loadFavorites(): Set<String> {
         val set = prefs.getStringSet("favorite_ids", emptySet()) ?: emptySet()
         return set.toSet()
@@ -225,5 +234,10 @@ class MusicRepository(private val context: Context) {
 
     private fun loadGlassBlurRadius(): Float {
         return prefs.getFloat("glass_blur", 14f).coerceIn(0f, 24f)
+    }
+
+    private fun loadCoverArtStyle(): CoverArtStyle {
+        val name = prefs.getString("cover_art_style", CoverArtStyle.SPINNING_DISC.name)
+        return CoverArtStyle.entries.find { it.name == name } ?: CoverArtStyle.SPINNING_DISC
     }
 }

@@ -90,3 +90,14 @@ enum class AppUiStyle(val title: String, val subtitle: String) {
     )
 }
 
+enum class CoverArtStyle(val title: String, val subtitle: String) {
+    ROUNDED_SQUARE(
+        title = "Hình vuông bo góc nhẹ",
+        subtitle = "Ảnh bìa vuông vức bo góc tinh tế"
+    ),
+    SPINNING_DISC(
+        title = "Hình tròn đĩa xoay",
+        subtitle = "Đĩa tròn xoay theo nhịp nhạc đang phát"
+    )
+}
+

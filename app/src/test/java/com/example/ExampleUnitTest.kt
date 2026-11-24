@@ -2,6 +2,7 @@ package com.example
 
 import com.example.model.AppUiStyle
 import com.example.model.AudioTrack
+import com.example.model.CoverArtStyle
 import com.example.ui.theme.buildTvStyleTokens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,7 +29,17 @@ class ExampleUnitTest {
   }
 
   @Test
-  fun audioTrackFormatsSizeAndDurationCorrectly() {
+  fun coverArtStylesContainRoundedSquareAndSpinningDisc() {
+    val styles = CoverArtStyle.entries
+    assertEquals(2, styles.size)
+    assertTrue(styles.contains(CoverArtStyle.ROUNDED_SQUARE))
+    assertTrue(styles.contains(CoverArtStyle.SPINNING_DISC))
+    assertTrue(CoverArtStyle.ROUNDED_SQUARE.title.contains("vuông", ignoreCase = true))
+    assertTrue(CoverArtStyle.SPINNING_DISC.title.contains("xoay", ignoreCase = true))
+  }
+
+  @Test
+  fun audioTrackFormatsSizeDurationAndCoverUriCorrectly() {
     val track = AudioTrack(
       id = "unit_1",
       title = "Lossless Demo",
@@ -39,10 +50,12 @@ class ExampleUnitTest {
       format = "FLAC",
       bitrate = "Lossless",
       sampleRate = "96.0 kHz",
-      fileSizeBytes = 10 * 1024 * 1024L
+      fileSizeBytes = 10 * 1024 * 1024L,
+      albumArtUri = "/cache/album_art/cover.jpg"
     )
 
     assertEquals("02:05", track.formattedDuration)
     assertEquals("10.0 MB", track.formattedSize)
+    assertEquals("/cache/album_art/cover.jpg", track.albumArtUri)
   }
 }

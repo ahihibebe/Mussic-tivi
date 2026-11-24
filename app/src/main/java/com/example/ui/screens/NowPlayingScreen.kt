@@ -19,6 +19,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Favorite
@@ -45,10 +47,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.AudioTrack
+import com.example.model.CoverArtStyle
 import com.example.model.EqualizerPreset
 import com.example.model.RepeatMode
+import com.example.ui.components.AlbumCoverView
 import com.example.ui.components.AudioVisualizerView
-import com.example.ui.components.VinylDiscView
 import com.example.ui.components.tvFocusable
 import com.example.ui.theme.LocalTvStyle
 
@@ -64,6 +67,8 @@ fun NowPlayingScreen(
     sleepTimerSeconds: Int?,
     visualizerBands: List<Float>,
     playlist: List<AudioTrack>,
+    coverArtStyle: CoverArtStyle = CoverArtStyle.SPINNING_DISC,
+    onSetCoverArtStyle: (CoverArtStyle) -> Unit = {},
     onPlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
@@ -126,7 +131,7 @@ fun NowPlayingScreen(
             .padding(horizontal = 32.dp, vertical = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(36.dp)
     ) {
-        // Left Column: Vinyl Player & Visualizer
+        // Left Column: Cover Art (Rounded Square or Spinning Disc) & Visualizer
         Column(
             modifier = Modifier
                 .weight(0.95f)
@@ -134,12 +139,81 @@ fun NowPlayingScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            VinylDiscView(
+            AlbumCoverView(
+                albumArtUri = currentTrack.albumArtUri,
+                coverStyle = coverArtStyle,
                 isPlaying = isPlaying,
-                size = 240.dp
+                size = 220.dp,
+                cornerRadius = 14.dp,
+                showCenterHole = true
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Quick Cover Style Toggle Row
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val isSquare = coverArtStyle == CoverArtStyle.ROUNDED_SQUARE
+                val isDisc = coverArtStyle == CoverArtStyle.SPINNING_DISC
+
+                Row(
+                    modifier = Modifier
+                        .tvFocusable(
+                            tag = "np_cover_square",
+                            shape = RoundedCornerShape(10.dp),
+                            defaultBgColor = if (isSquare) style.selectedPillSurface else style.cardSurface,
+                            defaultBorderColor = if (isSquare) style.accentColor else style.borderColor,
+                            onClick = { onSetCoverArtStyle(CoverArtStyle.ROUNDED_SQUARE) }
+                        )
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CropSquare,
+                        contentDescription = "Vuông bo góc",
+                        tint = if (isSquare) style.accentColor else style.textSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Vuông bo góc",
+                        color = if (isSquare) style.accentColor else style.textSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = if (isSquare) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .tvFocusable(
+                            tag = "np_cover_disc",
+                            shape = RoundedCornerShape(10.dp),
+                            defaultBgColor = if (isDisc) style.selectedPillSurface else style.cardSurface,
+                            defaultBorderColor = if (isDisc) style.accentColor else style.borderColor,
+                            onClick = { onSetCoverArtStyle(CoverArtStyle.SPINNING_DISC) }
+                        )
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Album,
+                        contentDescription = "Đĩa xoay",
+                        tint = if (isDisc) style.accentColor else style.textSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Đĩa xoay",
+                        color = if (isDisc) style.accentColor else style.textSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = if (isDisc) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             AudioVisualizerView(
                 bands = visualizerBands,

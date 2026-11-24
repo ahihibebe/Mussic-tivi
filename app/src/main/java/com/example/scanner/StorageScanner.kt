@@ -13,12 +13,19 @@ import com.example.model.AudioTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.util.Locale
 
 class StorageScanner(private val context: Context) {
 
     private val supportedExtensions = setOf(
         "mp3", "flac", "wav", "aac", "m4a", "ogg", "opus", "wma", "mid"
+    )
+
+    private val coverFileNames = listOf(
+        "cover.jpg", "cover.jpeg", "cover.png",
+        "folder.jpg", "folder.jpeg", "folder.png",
+        "album.jpg", "album.png", "front.jpg", "front.png"
     )
 
     data class ScanResult(
@@ -52,13 +59,12 @@ class StorageScanner(private val context: Context) {
 
         // 2. Scan standard device storage folders & external mounts (USB on TV)
         val candidateDirs = mutableListOf<File>()
-        
+
         try {
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)?.let { candidateDirs.add(it) }
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.let { candidateDirs.add(it) }
             Environment.getExternalStorageDirectory()?.let { candidateDirs.add(it) }
 
-            // TV USB Drives and SD cards are typically mounted under /storage
             val storageRoot = File("/storage")
             if (storageRoot.exists() && storageRoot.isDirectory) {
                 storageRoot.listFiles()?.forEach { file ->
@@ -109,7 +115,8 @@ class StorageScanner(private val context: Context) {
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.SIZE,
-            MediaStore.Audio.Media.MIME_TYPE
+            MediaStore.Audio.Media.MIME_TYPE,
+            MediaStore.Audio.Media.ALBUM_ID
         )
 
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
@@ -123,6 +130,7 @@ class StorageScanner(private val context: Context) {
             val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
             val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
             val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
+            val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
@@ -133,6 +141,7 @@ class StorageScanner(private val context: Context) {
                 val path = cursor.getString(dataCol) ?: ""
                 val size = cursor.getLong(sizeCol)
                 val mime = cursor.getString(mimeCol) ?: ""
+                val albumId = cursor.getLong(albumIdCol)
 
                 if (path.isNotEmpty()) {
                     val file = File(path)
@@ -141,6 +150,7 @@ class StorageScanner(private val context: Context) {
                         val format = determineFormat(ext, mime)
                         val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString()
                         val parent = file.parent ?: ""
+                        val albumArt = resolveMediaStoreOrFolderArt(albumId, file)
 
                         tracks.add(
                             AudioTrack(
@@ -154,7 +164,8 @@ class StorageScanner(private val context: Context) {
                                 format = format,
                                 bitrate = "320 kbps",
                                 fileSizeBytes = size,
-                                parentDirectory = parent
+                                parentDirectory = parent,
+                                albumArtUri = albumArt
                             )
                         )
                     }
@@ -195,6 +206,7 @@ class StorageScanner(private val context: Context) {
         var durationMs = 0L
         var bitrate = "320 kbps"
         var sampleRate = "44.1 kHz"
+        var albumArtUri: String? = null
 
         val retriever = MediaMetadataRetriever()
         try {
@@ -213,12 +225,18 @@ class StorageScanner(private val context: Context) {
                 val bps = metaBitrate.toLongOrNull() ?: 0L
                 if (bps > 0) bitrate = "${bps / 1000} kbps"
             }
+
+            albumArtUri = cacheEmbeddedPicture(file, retriever.embeddedPicture)
         } catch (e: Exception) {
             // Fallback gracefully to filename
         } finally {
             try {
                 retriever.release()
             } catch (ignored: Exception) {}
+        }
+
+        if (albumArtUri == null) {
+            albumArtUri = findFolderCoverArt(file.parentFile)
         }
 
         if (format == "FLAC" || format == "WAV") {
@@ -237,8 +255,72 @@ class StorageScanner(private val context: Context) {
             bitrate = bitrate,
             sampleRate = sampleRate,
             fileSizeBytes = file.length(),
-            parentDirectory = file.parent ?: ""
+            parentDirectory = file.parent ?: "",
+            albumArtUri = albumArtUri
         )
+    }
+
+    private fun resolveMediaStoreOrFolderArt(albumId: Long, file: File): String? {
+        if (albumId > 0) {
+            val artUri = ContentUris.withAppendedId(
+                Uri.parse("content://media/external/audio/albumart"),
+                albumId
+            )
+            try {
+                context.contentResolver.openInputStream(artUri)?.use {
+                    return artUri.toString()
+                }
+            } catch (ignored: Exception) {
+            }
+        }
+
+        // Fallback: check embedded picture in cache or folder cover image
+        val cacheFile = File(getAlbumArtCacheDir(), "${file.absolutePath.hashCode()}.jpg")
+        if (cacheFile.exists() && cacheFile.length() > 0L) {
+            return cacheFile.absolutePath
+        }
+
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(file.absolutePath)
+            val embedded = cacheEmbeddedPicture(file, retriever.embeddedPicture)
+            if (embedded != null) return embedded
+        } catch (ignored: Exception) {
+        } finally {
+            try {
+                retriever.release()
+            } catch (ignored: Exception) {}
+        }
+
+        return findFolderCoverArt(file.parentFile)
+    }
+
+    private fun cacheEmbeddedPicture(audioFile: File, pictureBytes: ByteArray?): String? {
+        if (pictureBytes == null || pictureBytes.isEmpty()) return null
+        return try {
+            val artDir = getAlbumArtCacheDir()
+            val outFile = File(artDir, "${audioFile.absolutePath.hashCode()}.jpg")
+            if (!outFile.exists() || outFile.length() == 0L) {
+                FileOutputStream(outFile).use { it.write(pictureBytes) }
+            }
+            outFile.absolutePath
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun findFolderCoverArt(folder: File?): String? {
+        if (folder == null || !folder.exists() || !folder.isDirectory) return null
+        val files = folder.listFiles() ?: return null
+        for (candidateName in coverFileNames) {
+            val match = files.firstOrNull { it.isFile && it.name.equals(candidateName, ignoreCase = true) }
+            if (match != null) return match.absolutePath
+        }
+        return null
+    }
+
+    private fun getAlbumArtCacheDir(): File {
+        return File(context.cacheDir, "album_art").apply { mkdirs() }
     }
 
     private fun buildFolderHierarchy(tracks: List<AudioTrack>): List<AudioFolder> {

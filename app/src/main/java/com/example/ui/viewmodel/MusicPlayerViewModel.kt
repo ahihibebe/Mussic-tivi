@@ -9,6 +9,7 @@ import com.example.data.MusicRepository
 import com.example.model.AppUiStyle
 import com.example.model.AudioFolder
 import com.example.model.AudioTrack
+import com.example.model.CoverArtStyle
 import com.example.model.EqualizerPreset
 import com.example.model.SortOption
 import com.example.model.TvNavTab
@@ -49,6 +50,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val customBackgroundPath = repository.customBackgroundPath
     val backgroundOpacity = repository.backgroundOpacity
     val glassBlurRadius = repository.glassBlurRadius
+    val coverArtStyle = repository.coverArtStyle
 
     private val _isQrDialogVisible = MutableStateFlow(false)
     val isQrDialogVisible: StateFlow<Boolean> = _isQrDialogVisible.asStateFlow()
@@ -172,6 +174,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun setGlassBlurRadius(blur: Float) {
         repository.setGlassBlurRadius(blur)
+    }
+
+    fun setCoverArtStyle(style: CoverArtStyle) {
+        repository.setCoverArtStyle(style)
+    }
+
+    fun toggleCoverArtStyle() {
+        val next = if (coverArtStyle.value == CoverArtStyle.SPINNING_DISC) {
+            CoverArtStyle.ROUNDED_SQUARE
+        } else {
+            CoverArtStyle.SPINNING_DISC
+        }
+        repository.setCoverArtStyle(next)
     }
 
     fun setBackgroundFromUri(uri: Uri) {

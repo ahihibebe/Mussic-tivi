@@ -147,6 +147,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
     val sortOption by viewModel.sortOption.collectAsStateWithLifecycle()
 
     val uiStyle by viewModel.uiStyle.collectAsStateWithLifecycle()
+    val coverArtStyle by viewModel.coverArtStyle.collectAsStateWithLifecycle()
     val customBackgroundPath by viewModel.customBackgroundPath.collectAsStateWithLifecycle()
     val backgroundOpacity by viewModel.backgroundOpacity.collectAsStateWithLifecycle()
     val glassBlurRadius by viewModel.glassBlurRadius.collectAsStateWithLifecycle()
@@ -305,6 +306,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 currentTrack = currentTrack,
                                 isPlaying = isPlaying,
                                 isScanning = isScanning,
+                                coverArtStyle = coverArtStyle,
                                 onOpenFolder = { folder -> viewModel.openFolder(folder) },
                                 onCloseFolder = { viewModel.closeFolder() },
                                 onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
@@ -323,6 +325,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 searchQuery = searchQuery,
                                 selectedFormat = selectedFormat,
                                 sortOption = sortOption,
+                                coverArtStyle = coverArtStyle,
                                 onSearchChanged = { viewModel.setSearchQuery(it) },
                                 onFormatSelected = { viewModel.selectFormat(it) },
                                 onSortChanged = { viewModel.setSortOption(it) },
@@ -349,6 +352,8 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 sleepTimerSeconds = sleepTimerSeconds,
                                 visualizerBands = visualizerBands,
                                 playlist = playlist,
+                                coverArtStyle = coverArtStyle,
+                                onSetCoverArtStyle = { viewModel.setCoverArtStyle(it) },
                                 onPlayPause = { viewModel.togglePlayPause() },
                                 onSkipNext = { viewModel.skipNext() },
                                 onSkipPrevious = { viewModel.skipPrevious() },
@@ -370,6 +375,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 recentTracks = recentTracks,
                                 currentTrack = currentTrack,
                                 isPlaying = isPlaying,
+                                coverArtStyle = coverArtStyle,
                                 onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
                                 onPlayAll = { tracks, shuffle ->
                                     if (tracks.isNotEmpty()) {
@@ -384,6 +390,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                         TvNavTab.SETTINGS -> {
                             SettingsScreen(
                                 uiStyle = uiStyle,
+                                coverArtStyle = coverArtStyle,
                                 customBackgroundPath = customBackgroundPath,
                                 backgroundOpacity = backgroundOpacity,
                                 glassBlurRadius = glassBlurRadius,
@@ -393,6 +400,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 totalFoldersCount = allFolders.size,
                                 isScanning = isScanning,
                                 onSetUiStyle = { viewModel.setUiStyle(it) },
+                                onSetCoverArtStyle = { viewModel.setCoverArtStyle(it) },
                                 onSetBackgroundOpacity = { viewModel.setBackgroundOpacity(it) },
                                 onSetGlassBlurRadius = { viewModel.setGlassBlurRadius(it) },
                                 onOpenQrBackground = { viewModel.openQrBackgroundDialog() },
@@ -420,6 +428,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                             isPlaying = isPlaying,
                             currentPositionMs = currentPositionMs,
                             durationMs = durationMs,
+                            coverArtStyle = coverArtStyle,
                             onPlayPause = { viewModel.togglePlayPause() },
                             onSkipNext = { viewModel.skipNext() },
                             onOpenFullscreen = { viewModel.selectTab(TvNavTab.NOW_PLAYING) },

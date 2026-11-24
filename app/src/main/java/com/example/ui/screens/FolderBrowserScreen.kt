@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.AudioFolder
 import com.example.model.AudioTrack
+import com.example.model.CoverArtStyle
+import com.example.ui.components.AlbumCoverView
 import com.example.ui.components.tvFocusable
 import com.example.ui.theme.LocalTvStyle
 
@@ -58,6 +60,7 @@ fun FolderBrowserScreen(
     currentTrack: AudioTrack?,
     isPlaying: Boolean,
     isScanning: Boolean,
+    coverArtStyle: CoverArtStyle = CoverArtStyle.SPINNING_DISC,
     onOpenFolder: (AudioFolder) -> Unit,
     onCloseFolder: () -> Unit,
     onPlayTrack: (AudioTrack, List<AudioTrack>) -> Unit,
@@ -77,6 +80,7 @@ fun FolderBrowserScreen(
             tracks = folderTracks,
             currentTrack = currentTrack,
             isPlaying = isPlaying,
+            coverArtStyle = coverArtStyle,
             onBack = onCloseFolder,
             onPlayTrack = { track -> onPlayTrack(track, folderTracks) },
             onPlayAll = { shuffle -> onPlayFolder(browsingFolder, shuffle) },
@@ -322,6 +326,7 @@ private fun FolderDetailView(
     tracks: List<AudioTrack>,
     currentTrack: AudioTrack?,
     isPlaying: Boolean,
+    coverArtStyle: CoverArtStyle = CoverArtStyle.SPINNING_DISC,
     onBack: () -> Unit,
     onPlayTrack: (AudioTrack) -> Unit,
     onPlayAll: (Boolean) -> Unit,
@@ -447,6 +452,7 @@ private fun FolderDetailView(
                     track = track,
                     isCurrent = isCurrentlyPlaying,
                     isPlaying = isCurrentlyPlaying && isPlaying,
+                    coverArtStyle = coverArtStyle,
                     onPlay = { onPlayTrack(track) },
                     onToggleFavorite = { onToggleFavorite(track.id) }
                 )
@@ -461,6 +467,7 @@ fun TrackRowItem(
     track: AudioTrack,
     isCurrent: Boolean,
     isPlaying: Boolean,
+    coverArtStyle: CoverArtStyle = CoverArtStyle.SPINNING_DISC,
     onPlay: () -> Unit,
     onToggleFavorite: () -> Unit
 ) {
@@ -482,7 +489,7 @@ fun TrackRowItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier.size(34.dp),
+            modifier = Modifier.size(28.dp),
             contentAlignment = Alignment.Center
         ) {
             if (isCurrent && isPlaying) {
@@ -490,17 +497,28 @@ fun TrackRowItem(
                     imageVector = Icons.Default.Equalizer,
                     contentDescription = "Đang phát",
                     tint = style.accentColor,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             } else {
                 Text(
                     text = "%02d".format(index),
                     color = if (isCurrent) style.accentColor else style.textSecondary,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
             }
         }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        AlbumCoverView(
+            albumArtUri = track.albumArtUri,
+            coverStyle = coverArtStyle,
+            isPlaying = isCurrent && isPlaying,
+            size = 40.dp,
+            cornerRadius = 7.dp,
+            showCenterHole = false
+        )
 
         Spacer(modifier = Modifier.width(12.dp))
 

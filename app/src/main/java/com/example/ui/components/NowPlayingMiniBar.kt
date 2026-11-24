@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.AudioTrack
+import com.example.model.CoverArtStyle
 import com.example.ui.theme.LocalTvStyle
 
 @Composable
@@ -42,6 +43,7 @@ fun NowPlayingMiniBar(
     isPlaying: Boolean,
     currentPositionMs: Long,
     durationMs: Long,
+    coverArtStyle: CoverArtStyle = CoverArtStyle.SPINNING_DISC,
     onPlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     onOpenFullscreen: () -> Unit,
@@ -105,22 +107,14 @@ fun NowPlayingMiniBar(
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            if (style.isGlassStyle) Color(0x33FFFFFF) else Color(0xFF1E293B)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Album else Icons.Default.Audiotrack,
-                        contentDescription = "Cover",
-                        tint = if (style.isGlassStyle) style.accentColor else Color(0xFFFDE68A),
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                AlbumCoverView(
+                    albumArtUri = currentTrack.albumArtUri,
+                    coverStyle = coverArtStyle,
+                    isPlaying = isPlaying,
+                    size = 44.dp,
+                    cornerRadius = 8.dp,
+                    showCenterHole = false
+                )
 
                 Spacer(modifier = Modifier.width(12.dp))
 
