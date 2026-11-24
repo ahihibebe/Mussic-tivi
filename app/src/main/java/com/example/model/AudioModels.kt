@@ -68,6 +68,7 @@ enum class TvNavTab(val title: String, val iconName: String) {
     ALL_SONGS("Tất cả bài hát", "music"),
     NOW_PLAYING("Đang phát", "play_circle"),
     PLAYLISTS("Danh sách & Yêu thích", "favorite"),
+    WIFI_PHONE("Phát qua Wi-Fi", "wifi"),
     SETTINGS("Cài đặt & Âm thanh", "settings"),
     INFO("Thông tin", "info")
 }

@@ -107,6 +107,10 @@ class MusicRepository(private val context: Context) {
         return _allTracks.value.filter { favs.contains(it.id) }
     }
 
+    fun getWifiMusicDirPath(): String {
+        return File(context.filesDir, "wifi_music").apply { mkdirs() }.absolutePath
+    }
+
     fun filterAndSort(
         query: String = "",
         formatFilter: String? = null,

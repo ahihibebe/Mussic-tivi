@@ -14,12 +14,14 @@ import com.example.model.EqualizerPreset
 import com.example.model.SortOption
 import com.example.model.TvNavTab
 import com.example.qr.LocalBackgroundServer
+import com.example.qr.TvPlaybackSnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -61,16 +63,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _qrUploadStatus = MutableStateFlow("Đang chờ kết nối từ điện thoại...")
     val qrUploadStatus: StateFlow<String> = _qrUploadStatus.asStateFlow()
 
-    private val localServer = LocalBackgroundServer(
-        context = application,
-        onImageUploaded = { savedPath ->
-            repository.setCustomBackgroundPath(savedPath)
-            _qrUploadStatus.value = "Đã cập nhật ảnh nền mới từ điện thoại!"
-        },
-        onStatusUpdate = { status ->
-            _qrUploadStatus.value = status
-        }
-    )
+    // Wi-Fi Phone Streaming & Remote Hub State
+    private var isWifiMusicPinned = false
+
+    private val _isWifiServerRunning = MutableStateFlow(false)
+    val isWifiServerRunning: StateFlow<Boolean> = _isWifiServerRunning.asStateFlow()
+
+    private val _wifiServerUrl = MutableStateFlow<String?>(null)
+    val wifiServerUrl: StateFlow<String?> = _wifiServerUrl.asStateFlow()
+
+    private val _wifiActivityStatus = MutableStateFlow("Bật máy chủ để phát nhạc trên điện thoại cùng Wi-Fi")
+    val wifiActivityStatus: StateFlow<String> = _wifiActivityStatus.asStateFlow()
 
     // Repository flows
     val allTracks = repository.allTracks
@@ -90,6 +93,71 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val sleepTimerSeconds = playbackManager.sleepTimerSeconds
     val visualizerBands = playbackManager.visualizerBands
     val playlist = playbackManager.playlist
+
+    private val localServer = LocalBackgroundServer(
+        context = application,
+        getTracks = { allTracks.value },
+        getCoverArtStyle = { coverArtStyle.value },
+        getTvStatus = {
+            val t = currentTrack.value
+            TvPlaybackSnapshot(
+                trackId = t?.id,
+                title = t?.title ?: "Chưa phát bài nào",
+                artist = t?.artist ?: "TV Music",
+                album = t?.album ?: "",
+                format = t?.format ?: "",
+                isPlaying = isPlaying.value,
+                positionMs = currentPositionMs.value,
+                durationMs = durationMs.value
+            )
+        },
+        onPlayTrackOnTv = { trackId ->
+            viewModelScope.launch(Dispatchers.Main) {
+                val list = allTracks.value
+                val track = list.firstOrNull { it.id == trackId }
+                if (track != null) {
+                    playTrack(track, list)
+                }
+            }
+        },
+        onTvControl = { action ->
+            viewModelScope.launch(Dispatchers.Main) {
+                when (action) {
+                    "toggle" -> togglePlayPause()
+                    "next" -> skipNext()
+                    "prev" -> skipPrevious()
+                }
+            }
+        },
+        onAudioUploaded = { savedFile, autoplay ->
+            viewModelScope.launch {
+                repository.refreshLibrary()
+                if (autoplay) {
+                    val list = allTracks.value
+                    val uploaded = list.firstOrNull { it.filePath == savedFile.absolutePath }
+                    if (uploaded != null) {
+                        playTrack(uploaded, list)
+                    }
+                }
+            }
+        },
+        onImageUploaded = { savedPath ->
+            repository.setCustomBackgroundPath(savedPath)
+            _qrUploadStatus.value = "Đã cập nhật ảnh nền mới từ điện thoại!"
+        },
+        onStatusUpdate = { status ->
+            _qrUploadStatus.value = status
+        },
+        onClientActivity = { activity ->
+            _wifiActivityStatus.value = activity
+        }
+    )
+
+    // Tracks received over Wi-Fi
+    val wifiTracks: StateFlow<List<AudioTrack>> = allTracks.map { tracks ->
+        val wifiPath = repository.getWifiMusicDirPath()
+        tracks.filter { it.parentDirectory == wifiPath }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     // Filtered tracks for the All Songs screen
     val filteredTracks: StateFlow<List<AudioTrack>> = combine(
@@ -133,6 +201,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun selectTab(tab: TvNavTab) {
         _currentTab.value = tab
+        if (tab == TvNavTab.WIFI_PHONE && !_isWifiServerRunning.value) {
+            startWifiMusicServer()
+        }
     }
 
     fun openFolder(folder: AudioFolder) {
@@ -202,12 +273,49 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         repository.clearCustomBackground()
     }
 
+    fun startWifiMusicServer() {
+        isWifiMusicPinned = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val baseUrl = localServer.start()
+                _wifiServerUrl.value = "$baseUrl/?tab=play"
+                _isWifiServerRunning.value = true
+                _wifiActivityStatus.value = "Sẵn sàng — Quét QR bằng điện thoại cùng Wi-Fi để nghe nhạc"
+            } catch (e: Exception) {
+                isWifiMusicPinned = false
+                _isWifiServerRunning.value = false
+                _wifiServerUrl.value = null
+                _wifiActivityStatus.value = "Không thể mở máy chủ Wi-Fi: ${e.message}"
+            }
+        }
+    }
+
+    fun stopWifiMusicServer() {
+        isWifiMusicPinned = false
+        _isWifiServerRunning.value = false
+        _wifiServerUrl.value = null
+        _wifiActivityStatus.value = "Máy chủ phát nhạc qua Wi-Fi đã tắt"
+        if (!_isQrDialogVisible.value) {
+            viewModelScope.launch(Dispatchers.IO) {
+                localServer.stop()
+            }
+        }
+    }
+
+    fun toggleWifiMusicServer() {
+        if (_isWifiServerRunning.value) {
+            stopWifiMusicServer()
+        } else {
+            startWifiMusicServer()
+        }
+    }
+
     fun openQrBackgroundDialog() {
         _isQrDialogVisible.value = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val url = localServer.start()
-                _qrServerUrl.value = url
+                val baseUrl = localServer.start()
+                _qrServerUrl.value = "$baseUrl/?tab=bg"
                 _qrUploadStatus.value = "Quét mã QR bằng điện thoại (cùng Wi-Fi) để gửi ảnh"
             } catch (e: Exception) {
                 _qrUploadStatus.value = "Không thể mở máy chủ cục bộ: ${e.message}"
@@ -217,8 +325,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun closeQrBackgroundDialog() {
         _isQrDialogVisible.value = false
-        viewModelScope.launch(Dispatchers.IO) {
-            localServer.stop()
+        if (!isWifiMusicPinned) {
+            viewModelScope.launch(Dispatchers.IO) {
+                localServer.stop()
+            }
         }
     }
 

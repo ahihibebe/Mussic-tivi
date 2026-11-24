@@ -51,6 +51,7 @@ import com.example.ui.screens.NowPlayingScreen
 import com.example.ui.screens.PlaylistsScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SongsListScreen
+import com.example.ui.screens.WifiPhoneScreen
 import com.example.ui.theme.AppleTvDeepBg
 import com.example.ui.theme.AppleTvGlowBottom
 import com.example.ui.theme.AppleTvGlowTop
@@ -154,6 +155,10 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
     val isQrDialogVisible by viewModel.isQrDialogVisible.collectAsStateWithLifecycle()
     val qrServerUrl by viewModel.qrServerUrl.collectAsStateWithLifecycle()
     val qrUploadStatus by viewModel.qrUploadStatus.collectAsStateWithLifecycle()
+    val isWifiServerRunning by viewModel.isWifiServerRunning.collectAsStateWithLifecycle()
+    val wifiServerUrl by viewModel.wifiServerUrl.collectAsStateWithLifecycle()
+    val wifiActivityStatus by viewModel.wifiActivityStatus.collectAsStateWithLifecycle()
+    val wifiTracks by viewModel.wifiTracks.collectAsStateWithLifecycle()
 
     // Storage permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -286,6 +291,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                         selectedTab = currentTab,
                         onTabSelected = { tab -> viewModel.selectTab(tab) },
                         isPlaying = isPlaying,
+                        isWifiServerRunning = isWifiServerRunning,
                         sleepTimerSeconds = sleepTimerSeconds,
                         onToggleStyle = { viewModel.toggleUiStyle() },
                         onOpenQrBackground = { viewModel.openQrBackgroundDialog() },
@@ -383,6 +389,23 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                         viewModel.playTrack(q.first(), q)
                                     }
                                 },
+                                onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) }
+                            )
+                        }
+
+                        TvNavTab.WIFI_PHONE -> {
+                            WifiPhoneScreen(
+                                isServerRunning = isWifiServerRunning,
+                                serverUrl = wifiServerUrl,
+                                activityStatus = wifiActivityStatus,
+                                totalTracksCount = allTracks.size,
+                                wifiTracks = wifiTracks,
+                                currentTrack = currentTrack,
+                                isPlaying = isPlaying,
+                                coverArtStyle = coverArtStyle,
+                                onToggleServer = { viewModel.toggleWifiMusicServer() },
+                                onRefreshLibrary = { viewModel.scanLibrary() },
+                                onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
                                 onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) }
                             )
                         }

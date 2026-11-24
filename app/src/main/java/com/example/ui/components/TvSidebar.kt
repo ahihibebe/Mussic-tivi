@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,6 +49,7 @@ fun TvSidebar(
     selectedTab: TvNavTab,
     onTabSelected: (TvNavTab) -> Unit,
     isPlaying: Boolean,
+    isWifiServerRunning: Boolean = false,
     sleepTimerSeconds: Int?,
     onToggleStyle: () -> Unit = {},
     onOpenQrBackground: () -> Unit = {},
@@ -177,6 +179,7 @@ fun TvSidebar(
                     TvNavTab.ALL_SONGS -> Icons.Default.LibraryMusic
                     TvNavTab.NOW_PLAYING -> Icons.Default.Album
                     TvNavTab.PLAYLISTS -> Icons.Default.Favorite
+                    TvNavTab.WIFI_PHONE -> Icons.Default.Wifi
                     TvNavTab.SETTINGS -> Icons.Default.Tune
                     TvNavTab.INFO -> Icons.Default.Info
                 }
@@ -185,6 +188,7 @@ fun TvSidebar(
                     isSelected -> style.accentColor
                     tab == TvNavTab.PLAYLISTS -> style.redColor
                     tab == TvNavTab.FOLDERS -> style.amberColor
+                    tab == TvNavTab.WIFI_PHONE -> style.emeraldColor
                     tab == TvNavTab.INFO -> style.emeraldColor
                     else -> style.textSecondary
                 }
@@ -250,12 +254,14 @@ fun TvSidebar(
                             modifier = Modifier.weight(1f)
                         )
 
-                        if (tab == TvNavTab.NOW_PLAYING && isPlaying) {
+                        if ((tab == TvNavTab.NOW_PLAYING && isPlaying) ||
+                            (tab == TvNavTab.WIFI_PHONE && isWifiServerRunning)
+                        ) {
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(style.accentColor)
+                                    .background(if (tab == TvNavTab.WIFI_PHONE) style.emeraldColor else style.accentColor)
                             )
                         }
                     }

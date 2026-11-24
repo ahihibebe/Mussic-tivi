@@ -77,6 +77,10 @@ class StorageScanner(private val context: Context) {
             Log.e("StorageScanner", "Error checking storage roots", e)
         }
 
+        // 2b. Always scan app-private Wi-Fi received music folder
+        val wifiMusicDir = File(context.filesDir, "wifi_music").apply { mkdirs() }
+        candidateDirs.add(0, wifiMusicDir)
+
         for (dir in candidateDirs) {
             if (dir.exists() && dir.canRead()) {
                 scanDirectoryRecursively(dir, tracksList, seenPaths, maxDepth = 4)
@@ -330,12 +334,13 @@ class StorageScanner(private val context: Context) {
             folderMap.getOrPut(dir) { mutableListOf() }.add(track)
         }
 
+        val wifiDirPath = File(context.filesDir, "wifi_music").absolutePath
         return folderMap.map { (path, trackList) ->
             val file = File(path)
-            val folderName = if (file.name.isNotEmpty()) {
-                file.name
-            } else {
-                path
+            val folderName = when {
+                path == wifiDirPath -> "Nhạc từ Wi-Fi"
+                file.name.isNotEmpty() -> file.name
+                else -> path
             }
 
             val subfolders = file.listFiles { f -> f.isDirectory && !f.name.startsWith(".") }?.size ?: 0
