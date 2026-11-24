@@ -1,10 +1,15 @@
 package com.example.mobile
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +24,7 @@ import com.example.mobile.viewmodel.MobileServerViewModel
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MobileServerViewModel by viewModels()
+    private var hasPromptedPermission = false
 
     private val audioPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -34,11 +40,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val safFilesLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.addSafFiles(uris)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+        )
 
-        requestAudioPermissionIfNeeded(autoPrompt = true)
+        requestAudioPermissionIfNeeded(fromUserClick = false)
 
         setContent {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -48,7 +65,10 @@ class MainActivity : ComponentActivity() {
                     onToggleServer = viewModel::toggleServer,
                     onRescanMusic = viewModel::scanMusic,
                     onPickFolder = { safFolderLauncher.launch(null) },
-                    onRequestPermission = { requestAudioPermissionIfNeeded(autoPrompt = true) },
+                    onPickFiles = {
+                        safFilesLauncher.launch(arrayOf("audio/*", "application/ogg", "application/octet-stream", "*/*"))
+                    },
+                    onRequestPermission = { requestAudioPermissionIfNeeded(fromUserClick = true) },
                     onSearchQueryChange = viewModel::updateSearchQuery,
                     onTogglePreview = viewModel::togglePreview
                 )
@@ -56,16 +76,35 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestAudioPermissionIfNeeded(autoPrompt: Boolean) {
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    override fun onResume() {
+        super.onResume()
+        val granted = ContextCompat.checkSelfPermission(this, requiredAudioPermission()) == PackageManager.PERMISSION_GRANTED
+        viewModel.onPermissionUpdated(granted)
+    }
+
+    private fun requiredAudioPermission(): String {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_AUDIO
         } else {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
+    }
+
+    private fun requestAudioPermissionIfNeeded(fromUserClick: Boolean) {
+        val permission = requiredAudioPermission()
         val granted = ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
         viewModel.onPermissionUpdated(granted)
-        if (!granted && autoPrompt) {
-            audioPermissionLauncher.launch(permission)
+        if (!granted) {
+            if (fromUserClick && hasPromptedPermission && !shouldShowRequestPermissionRationale(permission)) {
+                val intent = Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.fromParts("package", packageName, null)
+                )
+                startActivity(intent)
+            } else {
+                hasPromptedPermission = true
+                audioPermissionLauncher.launch(permission)
+            }
         }
     }
 }

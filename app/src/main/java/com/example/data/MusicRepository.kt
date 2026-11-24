@@ -62,7 +62,7 @@ class MusicRepository(private val context: Context) {
     suspend fun refreshLibrary() = withContext(Dispatchers.IO) {
         _isScanning.value = true
         try {
-            val result = scanner.scanAll()
+            val result = scanner.scanAll(extraTreeUris = loadSavedTreeUris())
             val favs = _favoriteIds.value
 
             val updatedTracks = result.tracks.map { track ->
@@ -74,6 +74,19 @@ class MusicRepository(private val context: Context) {
         } finally {
             _isScanning.value = false
         }
+    }
+
+    fun addSafFolder(uri: Uri) {
+        val current = prefs.getStringSet("saf_tree_uris", emptySet()).orEmpty().toMutableSet()
+        current.add(uri.toString())
+        prefs.edit().putStringSet("saf_tree_uris", current).apply()
+    }
+
+    private fun loadSavedTreeUris(): Set<Uri> {
+        return prefs.getStringSet("saf_tree_uris", emptySet())
+            .orEmpty()
+            .mapNotNull { runCatching { Uri.parse(it) }.getOrNull() }
+            .toSet()
     }
 
     fun toggleFavorite(trackId: String) {

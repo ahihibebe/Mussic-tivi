@@ -88,18 +88,28 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.mobile.R
 import com.example.mobile.model.MobileAudioTrack
+import com.example.mobile.ui.theme.AmberBorder
 import com.example.mobile.ui.theme.AmberNotice
-import com.example.mobile.ui.theme.CyanSignal
-import com.example.mobile.ui.theme.CyanSignalGlow
-import com.example.mobile.ui.theme.DeepSlateBg
+import com.example.mobile.ui.theme.AmberSoftBg
+import com.example.mobile.ui.theme.AmberTextDark
+import com.example.mobile.ui.theme.CrimsonStop
 import com.example.mobile.ui.theme.EmeraldActive
-import com.example.mobile.ui.theme.EmeraldSurface
+import com.example.mobile.ui.theme.EmeraldBorder
+import com.example.mobile.ui.theme.EmeraldSoftBg
+import com.example.mobile.ui.theme.EmeraldTextDark
 import com.example.mobile.ui.theme.JetBrainsMonoFamily
-import com.example.mobile.ui.theme.SlateBorder
-import com.example.mobile.ui.theme.SlateCardSurface
-import com.example.mobile.ui.theme.SlateElevatedSurface
-import com.example.mobile.ui.theme.TextPrimaryLight
+import com.example.mobile.ui.theme.SkyBlueDeep
+import com.example.mobile.ui.theme.SkyBluePrimary
+import com.example.mobile.ui.theme.SkyBlueSoft
+import com.example.mobile.ui.theme.SkyBlueTint
+import com.example.mobile.ui.theme.SoftSlateBorder
+import com.example.mobile.ui.theme.SoftSlateVariant
+import com.example.mobile.ui.theme.SoftWhiteCanvas
+import com.example.mobile.ui.theme.TextMutedSlate
+import com.example.mobile.ui.theme.TextPrimaryDark
 import com.example.mobile.ui.theme.TextSecondarySlate
+import com.example.mobile.ui.theme.WhiteCardSurface
+import com.example.mobile.ui.theme.WhitePageBg
 import com.example.mobile.viewmodel.MobileServerUiState
 
 @Composable
@@ -108,6 +118,7 @@ fun MobileServerScreen(
     onToggleServer: () -> Unit,
     onRescanMusic: () -> Unit,
     onPickFolder: () -> Unit,
+    onPickFiles: () -> Unit,
     onRequestPermission: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onTogglePreview: (MobileAudioTrack) -> Unit
@@ -117,7 +128,7 @@ fun MobileServerScreen(
     val clipboard = LocalClipboardManager.current
 
     Scaffold(
-        containerColor = DeepSlateBg,
+        containerColor = WhitePageBg,
         contentWindowInsets = WindowInsets.safeDrawing
     ) { innerPadding ->
         Box(
@@ -126,9 +137,9 @@ fun MobileServerScreen(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xFF10203B),
-                            DeepSlateBg,
-                            Color(0xFF070D19)
+                            WhitePageBg,
+                            SoftWhiteCanvas,
+                            WhitePageBg
                         )
                     )
                 )
@@ -175,7 +186,8 @@ fun MobileServerScreen(
                         isScanning = uiState.isScanning,
                         savedFolderCount = uiState.savedFolderCount,
                         onRescanMusic = onRescanMusic,
-                        onPickFolder = onPickFolder
+                        onPickFolder = onPickFolder,
+                        onPickFiles = onPickFiles
                     )
                 }
 
@@ -201,8 +213,9 @@ fun MobileServerScreen(
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
-                            border = BorderStroke(1.dp, SlateBorder)
+                            colors = CardDefaults.cardColors(containerColor = WhiteCardSurface),
+                            border = BorderStroke(1.dp, SoftSlateBorder),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -213,14 +226,14 @@ fun MobileServerScreen(
                             ) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(22.dp),
-                                    color = CyanSignal,
+                                    color = SkyBluePrimary,
                                     strokeWidth = 2.5.dp
                                 )
                                 Spacer(modifier = Modifier.width(14.dp))
                                 Text(
                                     text = "Đang quét nhạc trên điện thoại...",
                                     style = MaterialTheme.typography.bodyLarge,
-                                    color = TextPrimaryLight
+                                    color = TextPrimaryDark
                                 )
                             }
                         }
@@ -232,6 +245,7 @@ fun MobileServerScreen(
                             hasQuery = uiState.searchQuery.isNotBlank(),
                             onRescanMusic = onRescanMusic,
                             onPickFolder = onPickFolder,
+                            onPickFiles = onPickFiles,
                             onRequestPermission = onRequestPermission
                         )
                     }
@@ -277,7 +291,7 @@ private fun MobileServerHeader(
                 modifier = Modifier
                     .size(46.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .border(1.dp, SlateBorder, RoundedCornerShape(14.dp)),
+                    .border(1.dp, SoftSlateBorder, RoundedCornerShape(14.dp)),
                 contentScale = ContentScale.Crop
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -285,7 +299,7 @@ private fun MobileServerHeader(
                 Text(
                     text = "Mobile Server WiFi",
                     style = MaterialTheme.typography.headlineSmall,
-                    color = TextPrimaryLight,
+                    color = TextPrimaryDark,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -301,10 +315,10 @@ private fun MobileServerHeader(
 
         Surface(
             shape = RoundedCornerShape(999.dp),
-            color = if (isRunning) EmeraldSurface else SlateElevatedSurface,
+            color = if (isRunning) EmeraldSoftBg else SoftSlateVariant,
             border = BorderStroke(
                 width = 1.dp,
-                color = if (isRunning) EmeraldActive.copy(alpha = 0.65f) else SlateBorder
+                color = if (isRunning) EmeraldBorder else SoftSlateBorder
             )
         ) {
             Row(
@@ -315,14 +329,14 @@ private fun MobileServerHeader(
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(if (isRunning) EmeraldActive else TextSecondarySlate)
+                        .background(if (isRunning) EmeraldActive else TextMutedSlate)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = if (isRunning) "ONLINE" else "TẠM TẮT",
                     style = MaterialTheme.typography.labelMedium,
                     fontFamily = JetBrainsMonoFamily,
-                    color = if (isRunning) Color(0xFFA7F3D0) else TextSecondarySlate
+                    color = if (isRunning) EmeraldTextDark else TextSecondarySlate
                 )
             }
         }
@@ -341,7 +355,7 @@ private fun HeroServerControlCard(
     val infiniteTransition = rememberInfiniteTransition(label = "server_pulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = if (uiState.isServerRunning) 1.09f else 1f,
+        targetValue = if (uiState.isServerRunning) 1.08f else 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 1100, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -350,26 +364,26 @@ private fun HeroServerControlCard(
     )
 
     val borderColor by animateColorAsState(
-        targetValue = if (uiState.isServerRunning) EmeraldActive.copy(alpha = 0.7f) else CyanSignal.copy(alpha = 0.45f),
+        targetValue = if (uiState.isServerRunning) EmeraldActive.copy(alpha = 0.65f) else SkyBluePrimary.copy(alpha = 0.35f),
         label = "hero_border"
     )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+        colors = CardDefaults.cardColors(containerColor = WhiteCardSurface),
         border = BorderStroke(1.5.dp, borderColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    Brush.linearGradient(
+                    Brush.verticalGradient(
                         colors = if (uiState.isServerRunning) {
-                            listOf(Color(0xFF0E2B2B), SlateCardSurface)
+                            listOf(EmeraldSoftBg.copy(alpha = 0.6f), WhiteCardSurface)
                         } else {
-                            listOf(Color(0xFF132744), SlateCardSurface)
+                            listOf(SkyBlueTint, WhiteCardSurface)
                         }
                     )
                 )
@@ -382,18 +396,14 @@ private fun HeroServerControlCard(
                     .clip(RoundedCornerShape(18.dp))
                     .background(
                         if (uiState.isServerRunning) {
-                            EmeraldActive.copy(alpha = 0.14f)
+                            EmeraldSoftBg
                         } else {
-                            CyanSignal.copy(alpha = 0.10f)
+                            SkyBlueSoft.copy(alpha = 0.55f)
                         }
                     )
                     .border(
                         width = 1.dp,
-                        color = if (uiState.isServerRunning) {
-                            EmeraldActive.copy(alpha = 0.45f)
-                        } else {
-                            CyanSignal.copy(alpha = 0.30f)
-                        },
+                        color = if (uiState.isServerRunning) EmeraldBorder else SkyBluePrimary.copy(alpha = 0.25f),
                         shape = RoundedCornerShape(18.dp)
                     )
                     .clickable(onClick = onToggleServer)
@@ -411,13 +421,13 @@ private fun HeroServerControlCard(
                             .size(46.dp)
                             .scale(pulseScale)
                             .clip(CircleShape)
-                            .background(if (uiState.isServerRunning) EmeraldActive else CyanSignalGlow),
+                            .background(if (uiState.isServerRunning) EmeraldActive else SkyBluePrimary),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (uiState.isServerRunning) Icons.Filled.WifiTethering else Icons.Filled.Wifi,
                             contentDescription = "Server Wi-Fi",
-                            tint = Color(0xFF04101A),
+                            tint = Color.White,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -426,7 +436,7 @@ private fun HeroServerControlCard(
                         Text(
                             text = "Đặt máy này làm Server nhạc",
                             style = MaterialTheme.typography.titleMedium,
-                            color = TextPrimaryLight
+                            color = TextPrimaryDark
                         )
                         Text(
                             text = if (uiState.isServerRunning) {
@@ -435,7 +445,7 @@ private fun HeroServerControlCard(
                                 "Bật để TV Music stream thẳng nhạc từ máy này"
                             },
                             style = MaterialTheme.typography.bodyMedium,
-                            color = if (uiState.isServerRunning) Color(0xFFA7F3D0) else TextSecondarySlate
+                            color = if (uiState.isServerRunning) EmeraldTextDark else TextSecondarySlate
                         )
                     }
                 }
@@ -445,10 +455,11 @@ private fun HeroServerControlCard(
                     checked = uiState.isServerRunning,
                     onCheckedChange = { onToggleServer() },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color(0xFF042016),
+                        checkedThumbColor = Color.White,
                         checkedTrackColor = EmeraldActive,
-                        uncheckedThumbColor = TextPrimaryLight,
-                        uncheckedTrackColor = SlateElevatedSurface
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color(0xFFCBD5E1),
+                        uncheckedBorderColor = SoftSlateBorder
                     )
                 )
             }
@@ -456,7 +467,7 @@ private fun HeroServerControlCard(
             Text(
                 text = uiState.statusText,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (uiState.isServerRunning) Color(0xFFBAE6FD) else TextSecondarySlate
+                color = if (uiState.isServerRunning) SkyBlueDeep else TextSecondarySlate
             )
 
             AnimatedVisibility(visible = uiState.isServerRunning && !uiState.serverUrl.isNullOrBlank()) {
@@ -464,8 +475,8 @@ private fun HeroServerControlCard(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = SlateElevatedSurface,
-                        border = BorderStroke(1.dp, CyanSignal.copy(alpha = 0.40f))
+                        color = SoftWhiteCanvas,
+                        border = BorderStroke(1.dp, SkyBluePrimary.copy(alpha = 0.35f))
                     ) {
                         Row(
                             modifier = Modifier
@@ -478,7 +489,7 @@ private fun HeroServerControlCard(
                                 Text(
                                     text = "ĐỊA CHỈ SERVER TRONG MẠNG WI-FI",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = CyanSignal
+                                    color = SkyBlueDeep
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
@@ -486,7 +497,7 @@ private fun HeroServerControlCard(
                                     fontFamily = JetBrainsMonoFamily,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
-                                    color = TextPrimaryLight
+                                    color = TextPrimaryDark
                                 )
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -494,12 +505,12 @@ private fun HeroServerControlCard(
                                     onClick = { onCopyUrl(url) },
                                     modifier = Modifier.testTag("mobile_btn_copy_url"),
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                                    border = BorderStroke(1.dp, SlateBorder)
+                                    border = BorderStroke(1.dp, SoftSlateBorder)
                                 ) {
                                     Text(
                                         text = if (copiedBanner) "Đã chép" else "Chép IP",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = TextPrimaryLight
+                                        color = TextPrimaryDark
                                     )
                                 }
                                 IconButton(
@@ -511,7 +522,7 @@ private fun HeroServerControlCard(
                                     Icon(
                                         imageVector = Icons.Filled.QrCode2,
                                         contentDescription = "Hiện mã QR địa chỉ Server",
-                                        tint = CyanSignal
+                                        tint = SkyBluePrimary
                                     )
                                 }
                             }
@@ -526,6 +537,7 @@ private fun HeroServerControlCard(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(Color.White)
+                                    .border(1.dp, SoftSlateBorder, RoundedCornerShape(16.dp))
                                     .padding(14.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
@@ -539,7 +551,7 @@ private fun HeroServerControlCard(
                                     text = url,
                                     fontFamily = JetBrainsMonoFamily,
                                     fontSize = 12.sp,
-                                    color = Color(0xFF0F172A)
+                                    color = TextPrimaryDark
                                 )
                             }
                         }
@@ -555,8 +567,8 @@ private fun HeroServerControlCard(
                     .testTag("mobile_primary_server_button"),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (uiState.isServerRunning) Color(0xFF991B1B) else CyanSignalGlow,
-                    contentColor = if (uiState.isServerRunning) Color.White else Color(0xFF041322)
+                    containerColor = if (uiState.isServerRunning) CrimsonStop else SkyBluePrimary,
+                    contentColor = Color.White
                 )
             ) {
                 Icon(
@@ -583,8 +595,8 @@ private fun PermissionRequiredCard(onRequestPermission: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF2B210B)),
-        border = BorderStroke(1.dp, AmberNotice.copy(alpha = 0.6f))
+        colors = CardDefaults.cardColors(containerColor = AmberSoftBg),
+        border = BorderStroke(1.dp, AmberBorder)
     ) {
         Row(
             modifier = Modifier
@@ -597,13 +609,13 @@ private fun PermissionRequiredCard(onRequestPermission: () -> Unit) {
                 Text(
                     text = "Cần quyền đọc nhạc trên điện thoại",
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color(0xFFFDE68A)
+                    color = AmberTextDark
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "Cho phép ứng dụng quét MP3, FLAC, WAV, M4A trong bộ nhớ máy.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFFFCD34D)
+                    color = AmberTextDark.copy(alpha = 0.85f)
                 )
             }
             Spacer(modifier = Modifier.width(10.dp))
@@ -612,7 +624,7 @@ private fun PermissionRequiredCard(onRequestPermission: () -> Unit) {
                 modifier = Modifier.testTag("mobile_btn_grant_permission"),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = AmberNotice,
-                    contentColor = Color(0xFF1E1302)
+                    contentColor = Color.White
                 )
             ) {
                 Icon(Icons.Filled.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -628,45 +640,84 @@ private fun LibraryActionRow(
     isScanning: Boolean,
     savedFolderCount: Int,
     onRescanMusic: () -> Unit,
-    onPickFolder: () -> Unit
+    onPickFolder: () -> Unit,
+    onPickFiles: () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        FilledTonalButton(
-            onClick = onRescanMusic,
-            enabled = !isScanning,
-            modifier = Modifier
-                .weight(1f)
-                .height(48.dp)
-                .testTag("mobile_btn_rescan"),
-            shape = RoundedCornerShape(14.dp)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(if (isScanning) "Đang quét..." else "Quét lại nhạc")
+            FilledTonalButton(
+                onClick = onRescanMusic,
+                enabled = !isScanning,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .testTag("mobile_btn_rescan"),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = SkyBlueSoft,
+                    contentColor = SkyBlueDeep
+                )
+            ) {
+                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(if (isScanning) "Đang quét..." else "Quét lại nhạc")
+            }
+
+            OutlinedButton(
+                onClick = onPickFolder,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .testTag("mobile_btn_pick_folder"),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, SoftSlateBorder),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = WhiteCardSurface,
+                    contentColor = TextPrimaryDark
+                )
+            ) {
+                Icon(
+                    Icons.Filled.CreateNewFolder,
+                    contentDescription = null,
+                    tint = SkyBluePrimary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (savedFolderCount > 0) "Thư mục ($savedFolderCount)" else "Chọn thư mục",
+                    color = TextPrimaryDark,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
         OutlinedButton(
-            onClick = onPickFolder,
+            onClick = onPickFiles,
             modifier = Modifier
-                .weight(1f)
+                .fillMaxWidth()
                 .height(48.dp)
-                .testTag("mobile_btn_pick_folder"),
+                .testTag("mobile_btn_pick_files"),
             shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, SlateBorder)
+            border = BorderStroke(1.dp, SoftSlateBorder),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = WhiteCardSurface,
+                contentColor = TextPrimaryDark
+            )
         ) {
             Icon(
-                Icons.Filled.CreateNewFolder,
+                Icons.Filled.AudioFile,
                 contentDescription = null,
-                tint = CyanSignal,
+                tint = SkyBluePrimary,
                 modifier = Modifier.size(18.dp)
             )
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = if (savedFolderCount > 0) "Thư mục ($savedFolderCount)" else "Chọn thư mục",
-                color = TextPrimaryLight,
+                text = "Chọn trực tiếp bài hát (Download / Thư mục bất kỳ)",
+                color = TextPrimaryDark,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -683,8 +734,9 @@ private fun TvConnectionGuideCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
-        border = BorderStroke(1.dp, SlateBorder)
+        colors = CardDefaults.cardColors(containerColor = WhiteCardSurface),
+        border = BorderStroke(1.dp, SoftSlateBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -694,14 +746,14 @@ private fun TvConnectionGuideCard(
                 Icon(
                     imageVector = Icons.Filled.Tv,
                     contentDescription = null,
-                    tint = CyanSignal,
+                    tint = SkyBluePrimary,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Cách kết nối trên TV Music",
                     style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimaryLight
+                    color = TextPrimaryDark
                 )
             }
             Text(
@@ -716,8 +768,8 @@ private fun TvConnectionGuideCard(
             if (activityLog.isNotEmpty()) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = DeepSlateBg.copy(alpha = 0.7f),
-                    border = BorderStroke(1.dp, SlateBorder.copy(alpha = 0.6f))
+                    color = SoftWhiteCanvas,
+                    border = BorderStroke(1.dp, SoftSlateBorder)
                 ) {
                     Column(
                         modifier = Modifier
@@ -728,7 +780,7 @@ private fun TvConnectionGuideCard(
                         Text(
                             text = "NHẬT KÝ HOẠT ĐỘNG GẦN ĐÂY",
                             style = MaterialTheme.typography.labelMedium,
-                            color = CyanSignal
+                            color = SkyBlueDeep
                         )
                         activityLog.take(4).forEach { entry ->
                             Text(
@@ -764,21 +816,21 @@ private fun TrackListHeaderAndSearch(
                 Icon(
                     imageVector = Icons.Filled.MusicNote,
                     contentDescription = null,
-                    tint = CyanSignal,
+                    tint = SkyBluePrimary,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "Kho nhạc chia sẻ",
                     style = MaterialTheme.typography.titleLarge,
-                    color = TextPrimaryLight
+                    color = TextPrimaryDark
                 )
             }
             Text(
                 text = if (searchQuery.isBlank()) "$totalTracks bài" else "$filteredCount / $totalTracks bài",
                 style = MaterialTheme.typography.labelMedium,
                 fontFamily = JetBrainsMonoFamily,
-                color = CyanSignal
+                color = SkyBlueDeep
             )
         }
 
@@ -792,27 +844,27 @@ private fun TrackListHeaderAndSearch(
             placeholder = {
                 Text(
                     text = "Tìm tên bài hát, ca sĩ, định dạng...",
-                    color = TextSecondarySlate
+                    color = TextMutedSlate
                 )
             },
             leadingIcon = {
-                Icon(Icons.Filled.Search, contentDescription = null, tint = TextSecondarySlate)
+                Icon(Icons.Filled.Search, contentDescription = null, tint = TextMutedSlate)
             },
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
                     IconButton(onClick = { onSearchQueryChange("") }) {
-                        Icon(Icons.Filled.Close, contentDescription = "Xóa tìm kiếm", tint = TextSecondarySlate)
+                        Icon(Icons.Filled.Close, contentDescription = "Xóa tìm kiếm", tint = TextMutedSlate)
                     }
                 }
             },
             shape = RoundedCornerShape(14.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = CyanSignal,
-                unfocusedBorderColor = SlateBorder,
-                focusedContainerColor = SlateCardSurface,
-                unfocusedContainerColor = SlateCardSurface,
-                focusedTextColor = TextPrimaryLight,
-                unfocusedTextColor = TextPrimaryLight
+                focusedBorderColor = SkyBluePrimary,
+                unfocusedBorderColor = SoftSlateBorder,
+                focusedContainerColor = WhiteCardSurface,
+                unfocusedContainerColor = WhiteCardSurface,
+                focusedTextColor = TextPrimaryDark,
+                unfocusedTextColor = TextPrimaryDark
             )
         )
     }
@@ -824,13 +876,14 @@ private fun EmptyTracksCard(
     hasQuery: Boolean,
     onRescanMusic: () -> Unit,
     onPickFolder: () -> Unit,
+    onPickFiles: () -> Unit,
     onRequestPermission: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
-        border = BorderStroke(1.dp, SlateBorder)
+        colors = CardDefaults.cardColors(containerColor = WhiteCardSurface),
+        border = BorderStroke(1.dp, SoftSlateBorder)
     ) {
         Column(
             modifier = Modifier
@@ -842,7 +895,7 @@ private fun EmptyTracksCard(
             Icon(
                 imageVector = Icons.Filled.AudioFile,
                 contentDescription = null,
-                tint = TextSecondarySlate,
+                tint = TextMutedSlate,
                 modifier = Modifier.size(38.dp)
             )
             Text(
@@ -852,18 +905,18 @@ private fun EmptyTracksCard(
                     else -> "Chưa tìm thấy file nhạc nào trên máy"
                 },
                 style = MaterialTheme.typography.titleMedium,
-                color = TextPrimaryLight
+                color = TextPrimaryDark
             )
             Text(
                 text = if (!hasPermission) {
-                    "Nhấn Cấp quyền hoặc Chọn thư mục chứa nhạc MP3 / FLAC / WAV."
+                    "Nhấn Cấp quyền hoặc Chọn trực tiếp bài hát trong Download."
                 } else {
-                    "Hãy chép nhạc vào thư mục Music/Downloads hoặc bấm Chọn thư mục để quét thêm."
+                    "Hãy bấm Quét lại hoặc Chọn trực tiếp bài hát / Chọn thư mục để thêm nhạc."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondarySlate
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!hasPermission) {
                     Button(onClick = onRequestPermission) {
                         Text("Cấp quyền")
@@ -873,8 +926,17 @@ private fun EmptyTracksCard(
                         Text("Quét lại")
                     }
                 }
-                OutlinedButton(onClick = onPickFolder) {
-                    Text("Chọn thư mục", color = TextPrimaryLight)
+                OutlinedButton(
+                    onClick = onPickFiles,
+                    border = BorderStroke(1.dp, SoftSlateBorder)
+                ) {
+                    Text("Chọn file", color = TextPrimaryDark)
+                }
+                OutlinedButton(
+                    onClick = onPickFolder,
+                    border = BorderStroke(1.dp, SoftSlateBorder)
+                ) {
+                    Text("Thư mục", color = TextPrimaryDark)
                 }
             }
         }
@@ -893,12 +955,13 @@ private fun MobileTrackItemCard(
             .testTag("mobile_track_${track.id}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isPlaying) SlateElevatedSurface else SlateCardSurface
+            containerColor = if (isPlaying) SkyBlueTint else WhiteCardSurface
         ),
         border = BorderStroke(
             width = 1.dp,
-            color = if (isPlaying) CyanSignal.copy(alpha = 0.7f) else SlateBorder.copy(alpha = 0.75f)
-        )
+            color = if (isPlaying) SkyBluePrimary.copy(alpha = 0.65f) else SoftSlateBorder
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isPlaying) 3.dp else 1.dp)
     ) {
         Row(
             modifier = Modifier
@@ -911,8 +974,8 @@ private fun MobileTrackItemCard(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(SlateElevatedSurface)
-                    .border(1.dp, SlateBorder, RoundedCornerShape(12.dp)),
+                    .background(SoftSlateVariant)
+                    .border(1.dp, SoftSlateBorder, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 if (!track.albumArtUri.isNullOrBlank()) {
@@ -926,7 +989,7 @@ private fun MobileTrackItemCard(
                     Icon(
                         imageVector = Icons.Filled.Album,
                         contentDescription = null,
-                        tint = CyanSignal.copy(alpha = 0.85f),
+                        tint = SkyBluePrimary,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -938,7 +1001,7 @@ private fun MobileTrackItemCard(
                 Text(
                     text = track.title,
                     style = MaterialTheme.typography.titleMedium,
-                    color = if (isPlaying) CyanSignal else TextPrimaryLight,
+                    color = if (isPlaying) SkyBlueDeep else TextPrimaryDark,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -957,14 +1020,14 @@ private fun MobileTrackItemCard(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = CyanSignal.copy(alpha = 0.14f)
+                        color = SkyBlueSoft
                     ) {
                         Text(
                             text = track.format,
                             fontFamily = JetBrainsMonoFamily,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = CyanSignal,
+                            color = SkyBlueDeep,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -972,7 +1035,7 @@ private fun MobileTrackItemCard(
                         text = "${track.bitrate} · ${track.formattedDuration}",
                         fontFamily = JetBrainsMonoFamily,
                         fontSize = 11.sp,
-                        color = TextSecondarySlate
+                        color = TextMutedSlate
                     )
                 }
             }
@@ -986,7 +1049,7 @@ private fun MobileTrackItemCard(
                 Icon(
                     imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (isPlaying) "Tạm dừng nghe thử" else "Nghe thử bài hát",
-                    tint = if (isPlaying) CyanSignal else TextPrimaryLight
+                    tint = if (isPlaying) SkyBluePrimary else TextPrimaryDark
                 )
             }
         }

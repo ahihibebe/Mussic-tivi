@@ -2,7 +2,7 @@ package com.example.mobile.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -25,36 +25,51 @@ val JetBrainsMonoFamily = FontFamily(
     Font(R.font.jetbrains_mono, FontWeight.Bold)
 )
 
-val DeepSlateBg = Color(0xFF0B1324)
-val SlateCardSurface = Color(0xFF131E33)
-val SlateElevatedSurface = Color(0xFF1B2945)
-val SlateBorder = Color(0xFF283A5E)
-val CyanSignal = Color(0xFF38BDF8)
-val CyanSignalGlow = Color(0xFF0EA5E9)
-val EmeraldActive = Color(0xFF10B981)
-val EmeraldSurface = Color(0xFF0D3328)
-val AmberNotice = Color(0xFFF59E0B)
-val TextPrimaryLight = Color(0xFFF8FAFC)
-val TextSecondarySlate = Color(0xFF94A3B8)
+val WhitePageBg = Color(0xFFFFFFFF)
+val SoftWhiteCanvas = Color(0xFFF8FAFC)
+val WhiteCardSurface = Color(0xFFFFFFFF)
+val SoftSlateVariant = Color(0xFFF1F5F9)
+val SoftSlateBorder = Color(0xFFE2E8F0)
 
-private val MobileServerColorScheme = darkColorScheme(
-    primary = CyanSignal,
-    onPrimary = Color(0xFF05101F),
-    primaryContainer = Color(0xFF0C4A6E),
-    onPrimaryContainer = Color(0xFFE0F2FE),
+val SkyBluePrimary = Color(0xFF0284C7)
+val SkyBlueDeep = Color(0xFF0369A1)
+val SkyBlueSoft = Color(0xFFE0F2FE)
+val SkyBlueTint = Color(0xFFF0F9FF)
+
+val EmeraldActive = Color(0xFF059669)
+val EmeraldSoftBg = Color(0xFFECFDF5)
+val EmeraldBorder = Color(0xFFA7F3D0)
+val EmeraldTextDark = Color(0xFF065F46)
+
+val AmberNotice = Color(0xFFD97706)
+val AmberSoftBg = Color(0xFFFFFBEB)
+val AmberBorder = Color(0xFFFDE68A)
+val AmberTextDark = Color(0xFF92400E)
+
+val CrimsonStop = Color(0xFFDC2626)
+
+val TextPrimaryDark = Color(0xFF0F172A)
+val TextSecondarySlate = Color(0xFF475569)
+val TextMutedSlate = Color(0xFF64748B)
+
+private val MobileServerLightColorScheme = lightColorScheme(
+    primary = SkyBluePrimary,
+    onPrimary = Color.White,
+    primaryContainer = SkyBlueSoft,
+    onPrimaryContainer = SkyBlueDeep,
     secondary = EmeraldActive,
-    onSecondary = Color(0xFF042016),
-    secondaryContainer = EmeraldSurface,
-    onSecondaryContainer = Color(0xFFA7F3D0),
+    onSecondary = Color.White,
+    secondaryContainer = EmeraldSoftBg,
+    onSecondaryContainer = EmeraldTextDark,
     tertiary = AmberNotice,
-    onTertiary = Color(0xFF1E1302),
-    background = DeepSlateBg,
-    onBackground = TextPrimaryLight,
-    surface = SlateCardSurface,
-    onSurface = TextPrimaryLight,
-    surfaceVariant = SlateElevatedSurface,
+    onTertiary = Color.White,
+    background = WhitePageBg,
+    onBackground = TextPrimaryDark,
+    surface = WhiteCardSurface,
+    onSurface = TextPrimaryDark,
+    surfaceVariant = SoftSlateVariant,
     onSurfaceVariant = TextSecondarySlate,
-    outline = SlateBorder
+    outline = SoftSlateBorder
 )
 
 val MobileTypography = Typography(
@@ -99,7 +114,7 @@ val MobileTypography = Typography(
 @Composable
 fun MobileServerWifiTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = MobileServerColorScheme,
+        colorScheme = MobileServerLightColorScheme,
         typography = MobileTypography,
         content = content
     )

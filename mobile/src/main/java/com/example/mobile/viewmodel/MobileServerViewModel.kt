@@ -64,7 +64,7 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
     private val _statusText = MutableStateFlow("Chạm \"Đặt máy này làm Server nhạc\" để Tivi cùng Wi-Fi phát trực tiếp")
     private val _activityLog = MutableStateFlow<List<String>>(emptyList())
     private val _hasAudioPermission = MutableStateFlow(checkAudioPermission())
-    private val _savedFolderCount = MutableStateFlow(loadSavedTreeUris().size)
+    private val _savedFolderCount = MutableStateFlow(loadSavedTreeUris().size + loadSavedFileUris().size)
     private val _previewTrackId = MutableStateFlow<String?>(null)
     private val _isPreviewPlaying = MutableStateFlow(false)
 
@@ -143,15 +143,14 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
     )
 
     init {
-        if (_hasAudioPermission.value || _savedFolderCount.value > 0) {
-            scanMusic()
-        }
+        scanMusic()
     }
 
     fun onPermissionUpdated(granted: Boolean) {
         val current = granted || checkAudioPermission()
+        val changed = current != _hasAudioPermission.value
         _hasAudioPermission.value = current
-        if (current) {
+        if (current && (changed || _tracks.value.isEmpty())) {
             scanMusic()
         }
     }
@@ -166,8 +165,12 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
             _isScanning.value = true
             try {
                 val treeUris = loadSavedTreeUris()
-                _savedFolderCount.value = treeUris.size
-                val scanned = scanner.scanAll(treeUris)
+                val fileUris = loadSavedFileUris()
+                _savedFolderCount.value = treeUris.size + fileUris.size
+                val scanned = scanner.scanAll(
+                    extraTreeUris = treeUris,
+                    extraFileUris = fileUris
+                )
                 _tracks.value = scanned
                 appendActivityLog("Đã quét thấy ${scanned.size} bài hát trên điện thoại")
             } finally {
@@ -186,8 +189,25 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
         val current = prefs.getStringSet(KEY_SAF_TREE_URIS, emptySet()).orEmpty().toMutableSet()
         current.add(uri.toString())
         prefs.edit().putStringSet(KEY_SAF_TREE_URIS, current).apply()
-        _savedFolderCount.value = current.size
+        _savedFolderCount.value = current.size + loadSavedFileUris().size
         appendActivityLog("Đã thêm thư mục nhạc tùy chọn")
+        scanMusic()
+    }
+
+    fun addSafFiles(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val app = getApplication<Application>()
+        val current = prefs.getStringSet(KEY_SAF_FILE_URIS, emptySet()).orEmpty().toMutableSet()
+        uris.forEach { uri ->
+            try {
+                app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {
+            }
+            current.add(uri.toString())
+        }
+        prefs.edit().putStringSet(KEY_SAF_FILE_URIS, current).apply()
+        _savedFolderCount.value = loadSavedTreeUris().size + current.size
+        appendActivityLog("Đã thêm ${uris.size} file nhạc đã chọn")
         scanMusic()
     }
 
@@ -308,6 +328,13 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
             .toSet()
     }
 
+    private fun loadSavedFileUris(): Set<Uri> {
+        return prefs.getStringSet(KEY_SAF_FILE_URIS, emptySet())
+            .orEmpty()
+            .mapNotNull { runCatching { Uri.parse(it) }.getOrNull() }
+            .toSet()
+    }
+
     private fun appendActivityLog(message: String) {
         val stamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
         _activityLog.update { current ->
@@ -347,5 +374,6 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
     companion object {
         private const val PREFS_NAME = "mobile_server_prefs"
         private const val KEY_SAF_TREE_URIS = "saf_tree_uris"
+        private const val KEY_SAF_FILE_URIS = "saf_file_uris"
     }
 }

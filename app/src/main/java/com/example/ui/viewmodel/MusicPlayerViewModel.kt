@@ -228,6 +228,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun addSafFolder(uri: Uri) {
+        repository.addSafFolder(uri)
+        scanLibrary()
+    }
+
     fun selectTab(tab: TvNavTab) {
         _currentTab.value = tab
         if (tab == TvNavTab.WIFI_PHONE) {

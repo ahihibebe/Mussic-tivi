@@ -2,6 +2,7 @@ package com.example
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -79,6 +81,19 @@ class MainActivity : ComponentActivity() {
             ) {
                 TvMusicApp(viewModel = viewModel)
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        val granted = ContextCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED
+        if (granted && viewModel.allTracks.value.isEmpty() && !viewModel.isScanning.value) {
+            viewModel.scanLibrary()
         }
     }
 
@@ -185,11 +200,10 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
             try {
                 val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
                 context.contentResolver.takePersistableUriPermission(uri, takeFlags)
-                Toast.makeText(context, "Đã chọn thư mục: ${uri.path}", Toast.LENGTH_SHORT).show()
-                viewModel.scanLibrary()
-            } catch (e: Exception) {
-                viewModel.scanLibrary()
+            } catch (_: Exception) {
             }
+            Toast.makeText(context, "Đã thêm thư mục quét nhạc", Toast.LENGTH_SHORT).show()
+            viewModel.addSafFolder(uri)
         }
     }
 

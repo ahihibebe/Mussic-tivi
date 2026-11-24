@@ -255,41 +255,50 @@ class MobileHttpMusicServer(
     ) {
         val mime = guessAudioMime(track.format)
         val file = if (track.filePath.isNotBlank()) File(track.filePath) else null
+        val openedRaf = if (file != null && file.exists() && file.canRead() && file.length() > 0L) {
+            try {
+                RandomAccessFile(file, "r")
+            } catch (ignored: Exception) {
+                null
+            }
+        } else {
+            null
+        }
 
-        if (file != null && file.exists() && file.canRead() && file.length() > 0L) {
-            val totalLength = file.length()
-            val range = parseByteRange(rangeHeader, totalLength)
-            if (rangeHeader != null && range == null) {
-                val errHeaders = buildString {
-                    append("HTTP/1.1 416 Range Not Satisfiable\r\n")
-                    append("Content-Range: bytes */$totalLength\r\n")
+        if (openedRaf != null) {
+            openedRaf.use { raf ->
+                val totalLength = raf.length()
+                val range = parseByteRange(rangeHeader, totalLength)
+                if (rangeHeader != null && range == null) {
+                    val errHeaders = buildString {
+                        append("HTTP/1.1 416 Range Not Satisfiable\r\n")
+                        append("Content-Range: bytes */$totalLength\r\n")
+                        append("Access-Control-Allow-Origin: *\r\n")
+                        append("Connection: close\r\n\r\n")
+                    }
+                    output.write(errHeaders.toByteArray(StandardCharsets.US_ASCII))
+                    output.flush()
+                    return
+                }
+
+                val start = range?.first ?: 0L
+                val end = range?.last ?: (totalLength - 1)
+                val contentLength = end - start + 1
+                val isPartial = range != null
+
+                val header = buildString {
+                    append(if (isPartial) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n")
+                    append("Content-Type: $mime\r\n")
+                    append("Accept-Ranges: bytes\r\n")
+                    append("Content-Length: $contentLength\r\n")
+                    if (isPartial) {
+                        append("Content-Range: bytes $start-$end/$totalLength\r\n")
+                    }
                     append("Access-Control-Allow-Origin: *\r\n")
                     append("Connection: close\r\n\r\n")
                 }
-                output.write(errHeaders.toByteArray(StandardCharsets.US_ASCII))
-                output.flush()
-                return
-            }
-
-            val start = range?.first ?: 0L
-            val end = range?.last ?: (totalLength - 1)
-            val contentLength = end - start + 1
-            val isPartial = range != null
-
-            val header = buildString {
-                append(if (isPartial) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n")
-                append("Content-Type: $mime\r\n")
-                append("Accept-Ranges: bytes\r\n")
-                append("Content-Length: $contentLength\r\n")
-                if (isPartial) {
-                    append("Content-Range: bytes $start-$end/$totalLength\r\n")
-                }
-                append("Access-Control-Allow-Origin: *\r\n")
-                append("Connection: close\r\n\r\n")
-            }
-            output.write(header.toByteArray(StandardCharsets.US_ASCII))
-            if (!headOnly) {
-                RandomAccessFile(file, "r").use { raf ->
+                output.write(header.toByteArray(StandardCharsets.US_ASCII))
+                if (!headOnly) {
                     raf.seek(start)
                     val buffer = ByteArray(16 * 1024)
                     var remaining = contentLength
@@ -301,8 +310,8 @@ class MobileHttpMusicServer(
                         remaining -= read
                     }
                 }
+                output.flush()
             }
-            output.flush()
             return
         }
 
