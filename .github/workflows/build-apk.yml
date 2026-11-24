@@ -5,10 +5,14 @@ on:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    name: Build Debug APK
+    name: Build & Release APK
     runs-on: ubuntu-latest
 
     env:
@@ -57,9 +61,34 @@ jobs:
           cd ${{ env.PROJECT_DIR }}
           ./gradlew assembleDebug
 
+      - name: Prepare Release APK
+        run: |
+          mkdir -p release-apk
+          APK_FILE=$(find "${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug" -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            echo "❌ Không tìm thấy file APK sau khi build!"
+            exit 1
+          fi
+          cp "$APK_FILE" "release-apk/TV-Music-v1.0.${{ github.run_number }}.apk"
+          ls -lh release-apk/
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: "**/build/outputs/apk/debug/*.apk"
+          path: "release-apk/*.apk"
           if-no-files-found: error
+
+      - name: Publish APK to GitHub Releases
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v1.0.${{ github.run_number }}"
+          name: "TV Music v1.0.${{ github.run_number }}"
+          body: |
+            Bản build tự động TV Music APK (`v1.0.${{ github.run_number }}`).
+            Tải file `.apk` bên dưới để cài đặt trực tiếp lên Android TV hoặc điện thoại Android.
+          files: "release-apk/*.apk"
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

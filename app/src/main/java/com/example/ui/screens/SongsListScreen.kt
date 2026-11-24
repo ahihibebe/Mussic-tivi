@@ -32,7 +32,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -41,15 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.example.model.AudioTrack
 import com.example.model.SortOption
 import com.example.ui.components.tvFocusable
-import com.example.ui.theme.AudioPrimary
-import com.example.ui.theme.AudioPrimaryLight
-import com.example.ui.theme.LightBorder
-import com.example.ui.theme.LightSurface
-import com.example.ui.theme.LightSurfaceCard
-import com.example.ui.theme.LightSurfaceVariant
-import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.LocalTvStyle
 
 @Composable
 fun SongsListScreen(
@@ -68,13 +59,13 @@ fun SongsListScreen(
     modifier: Modifier = Modifier
 ) {
     val formats = listOf("ALL", "FLAC", "MP3", "WAV", "AAC", "OGG")
+    val style = LocalTvStyle.current
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 28.dp, vertical = 20.dp)
     ) {
-        // Title & Search Row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -83,31 +74,30 @@ fun SongsListScreen(
             Column {
                 Text(
                     text = "Tất Cả Bài Hát",
-                    color = TextPrimary,
+                    color = style.textPrimary,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = "${tracks.size} bài hát được phát hiện trên thiết bị",
-                    color = TextSecondary,
+                    color = style.textSecondary,
                     fontSize = 13.sp
                 )
             }
 
-            // Search input field with mouse cursor
             Row(
                 modifier = Modifier
                     .width(320.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(LightSurface)
-                    .border(1.dp, LightBorder, RoundedCornerShape(10.dp))
+                    .background(style.cardSurface)
+                    .border(1.dp, style.borderColor, RoundedCornerShape(10.dp))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = "Tìm kiếm",
-                    tint = TextSecondary,
+                    tint = style.textSecondary,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -115,17 +105,17 @@ fun SongsListScreen(
                     value = searchQuery,
                     onValueChange = onSearchChanged,
                     textStyle = TextStyle(
-                        color = TextPrimary,
+                        color = style.textPrimary,
                         fontSize = 14.sp
                     ),
-                    cursorBrush = SolidColor(AudioPrimary),
+                    cursorBrush = SolidColor(style.accentColor),
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                     decorationBox = { innerTextField ->
                         if (searchQuery.isEmpty()) {
                             Text(
                                 text = "Tìm bài hát, nghệ sĩ...",
-                                color = TextMuted,
+                                color = style.textMuted,
                                 fontSize = 13.sp
                             )
                         }
@@ -145,7 +135,7 @@ fun SongsListScreen(
                         Icon(
                             imageVector = Icons.Default.Clear,
                             contentDescription = "Xóa tìm kiếm",
-                            tint = TextSecondary,
+                            tint = style.textSecondary,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -155,13 +145,11 @@ fun SongsListScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Format Filter Chips + Play All / Shuffle buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Filter chips with mouse pointer
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -183,16 +171,16 @@ fun SongsListScreen(
                             .tvFocusable(
                                 tag = "fmt_chip_$fmt",
                                 shape = RoundedCornerShape(20.dp),
-                                defaultBgColor = if (isSelected) AudioPrimary else LightSurface,
-                                focusedBgColor = if (isSelected) Color(0xFF1E40AF) else LightSurfaceVariant,
-                                defaultBorderColor = if (isSelected) AudioPrimary else LightBorder,
+                                defaultBgColor = if (isSelected) style.accentColor else style.cardSurface,
+                                focusedBgColor = if (isSelected) style.accentColor.copy(alpha = 0.85f) else style.focusedSurface,
+                                defaultBorderColor = if (isSelected) style.accentColor else style.borderColor,
                                 onClick = { onFormatSelected(fmt) }
                             )
                             .padding(horizontal = 14.dp, vertical = 6.dp)
                     ) {
                         Text(
                             text = label,
-                            color = if (isSelected) Color.White else TextSecondary,
+                            color = if (isSelected) style.accentContentColor else style.textSecondary,
                             fontSize = 12.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                         )
@@ -202,15 +190,15 @@ fun SongsListScreen(
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            // Play All & Shuffle Buttons
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(
                     modifier = Modifier
                         .tvFocusable(
                             tag = "btn_songs_play_all",
                             shape = RoundedCornerShape(10.dp),
-                            defaultBgColor = AudioPrimary,
-                            focusedBgColor = Color(0xFF1E40AF),
+                            defaultBgColor = style.accentColor,
+                            focusedBgColor = style.accentColor.copy(alpha = 0.85f),
+                            defaultBorderColor = style.accentColor,
                             onClick = { onPlayAll(false) }
                         )
                         .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -219,13 +207,13 @@ fun SongsListScreen(
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = "Phát tất cả",
-                        tint = Color.White,
+                        tint = style.accentContentColor,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Phát tất cả",
-                        color = Color.White,
+                        color = style.accentContentColor,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -238,7 +226,6 @@ fun SongsListScreen(
                         .tvFocusable(
                             tag = "btn_songs_shuffle",
                             shape = RoundedCornerShape(10.dp),
-                            defaultBgColor = LightSurface,
                             onClick = { onPlayAll(true) }
                         )
                         .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -247,7 +234,7 @@ fun SongsListScreen(
                     Icon(
                         imageVector = Icons.Default.Shuffle,
                         contentDescription = "Xáo trộn",
-                        tint = TextPrimary,
+                        tint = style.textPrimary,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -256,7 +243,6 @@ fun SongsListScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Tracks List
         if (tracks.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -268,19 +254,19 @@ fun SongsListScreen(
                     Icon(
                         imageVector = Icons.Default.MusicOff,
                         contentDescription = null,
-                        tint = TextMuted,
+                        tint = style.textMuted,
                         modifier = Modifier.size(56.dp)
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
                         text = "Không tìm thấy bài hát phù hợp",
-                        color = TextPrimary,
+                        color = style.textPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         text = "Hãy thử đổi từ khóa tìm kiếm hoặc chọn định dạng 'Tất cả'",
-                        color = TextSecondary,
+                        color = style.textSecondary,
                         fontSize = 13.sp
                     )
                 }

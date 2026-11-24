@@ -69,7 +69,8 @@ enum class TvNavTab(val title: String, val iconName: String) {
     ALL_SONGS("Tất cả bài hát", "music"),
     NOW_PLAYING("Đang phát", "play_circle"),
     PLAYLISTS("Danh sách & Yêu thích", "favorite"),
-    SETTINGS("Cài đặt & Âm thanh", "settings")
+    SETTINGS("Cài đặt & Âm thanh", "settings"),
+    INFO("Thông tin", "info")
 }
 
 enum class SortOption(val label: String) {
@@ -78,3 +79,15 @@ enum class SortOption(val label: String) {
     DURATION("Thời lượng"),
     FORMAT("Định dạng (FLAC, MP3...)")
 }
+
+enum class AppUiStyle(val title: String, val subtitle: String) {
+    CLASSIC_LIGHT(
+        title = "Nền Trắng Thanh Lịch",
+        subtitle = "Giao diện sáng rõ nét, tương phản cao"
+    ),
+    APPLE_TV_GLASS(
+        title = "Apple TV (Hiệu Ứng Kính)",
+        subtitle = "Kính mờ tvOS sang trọng, nổi bật khi di chuyển"
+    )
+}
+

@@ -2,6 +2,10 @@ package com.example.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import com.example.model.AppUiStyle
 import com.example.model.AudioFolder
 import com.example.model.AudioTrack
 import com.example.model.SortOption
@@ -11,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 
 class MusicRepository(private val context: Context) {
 
@@ -31,6 +37,19 @@ class MusicRepository(private val context: Context) {
 
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
+    // Appearance & Background Preferences
+    private val _uiStyle = MutableStateFlow(loadUiStyle())
+    val uiStyle: StateFlow<AppUiStyle> = _uiStyle.asStateFlow()
+
+    private val _customBackgroundPath = MutableStateFlow(loadCustomBackgroundPath())
+    val customBackgroundPath: StateFlow<String?> = _customBackgroundPath.asStateFlow()
+
+    private val _backgroundOpacity = MutableStateFlow(loadBackgroundOpacity())
+    val backgroundOpacity: StateFlow<Float> = _backgroundOpacity.asStateFlow()
+
+    private val _glassBlurRadius = MutableStateFlow(loadGlassBlurRadius())
+    val glassBlurRadius: StateFlow<Float> = _glassBlurRadius.asStateFlow()
 
     suspend fun refreshLibrary() = withContext(Dispatchers.IO) {
         _isScanning.value = true
@@ -59,7 +78,6 @@ class MusicRepository(private val context: Context) {
         _favoriteIds.value = currentFavs
         saveFavorites(currentFavs)
 
-        // Update in-memory track list
         _allTracks.value = _allTracks.value.map {
             if (it.id == trackId) it.copy(isFavorite = currentFavs.contains(trackId)) else it
         }
@@ -96,9 +114,9 @@ class MusicRepository(private val context: Context) {
             val q = query.trim().lowercase()
             list = list.filter {
                 it.title.lowercase().contains(q) ||
-                it.artist.lowercase().contains(q) ||
-                it.album.lowercase().contains(q) ||
-                it.format.lowercase().contains(q)
+                    it.artist.lowercase().contains(q) ||
+                    it.album.lowercase().contains(q) ||
+                    it.format.lowercase().contains(q)
             }
         }
 
@@ -114,6 +132,74 @@ class MusicRepository(private val context: Context) {
         }
     }
 
+    fun setUiStyle(style: AppUiStyle) {
+        _uiStyle.value = style
+        prefs.edit().putString("ui_style", style.name).apply()
+    }
+
+    fun setCustomBackgroundPath(path: String?) {
+        _customBackgroundPath.value = path
+        if (path == null) {
+            prefs.edit().remove("custom_bg_path").apply()
+        } else {
+            prefs.edit().putString("custom_bg_path", path).apply()
+        }
+    }
+
+    suspend fun saveCustomBackgroundFromUri(uri: Uri): String? = withContext(Dispatchers.IO) {
+        try {
+            val rawBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: return@withContext null
+
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
+
+            var sampleSize = 1
+            val maxDim = 2560
+            while ((bounds.outWidth / sampleSize) > maxDim || (bounds.outHeight / sampleSize) > maxDim) {
+                sampleSize *= 2
+            }
+
+            val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            val bitmap = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOpts)
+                ?: return@withContext null
+
+            context.filesDir.listFiles { f ->
+                f.name.startsWith("custom_bg_") && f.name.endsWith(".jpg")
+            }?.forEach { it.delete() }
+
+            val outFile = File(context.filesDir, "custom_bg_${System.currentTimeMillis()}.jpg")
+            FileOutputStream(outFile).use { fos ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos)
+            }
+            bitmap.recycle()
+            setCustomBackgroundPath(outFile.absolutePath)
+            outFile.absolutePath
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun clearCustomBackground() {
+        context.filesDir.listFiles { f ->
+            f.name.startsWith("custom_bg_") && f.name.endsWith(".jpg")
+        }?.forEach { it.delete() }
+        setCustomBackgroundPath(null)
+    }
+
+    fun setBackgroundOpacity(opacity: Float) {
+        val clamped = opacity.coerceIn(0f, 1f)
+        _backgroundOpacity.value = clamped
+        prefs.edit().putFloat("bg_opacity", clamped).apply()
+    }
+
+    fun setGlassBlurRadius(blur: Float) {
+        val clamped = blur.coerceIn(0f, 24f)
+        _glassBlurRadius.value = clamped
+        prefs.edit().putFloat("glass_blur", clamped).apply()
+    }
+
     private fun loadFavorites(): Set<String> {
         val set = prefs.getStringSet("favorite_ids", emptySet()) ?: emptySet()
         return set.toSet()
@@ -121,5 +207,23 @@ class MusicRepository(private val context: Context) {
 
     private fun saveFavorites(favs: Set<String>) {
         prefs.edit().putStringSet("favorite_ids", favs).apply()
+    }
+
+    private fun loadUiStyle(): AppUiStyle {
+        val name = prefs.getString("ui_style", AppUiStyle.CLASSIC_LIGHT.name)
+        return AppUiStyle.entries.find { it.name == name } ?: AppUiStyle.CLASSIC_LIGHT
+    }
+
+    private fun loadCustomBackgroundPath(): String? {
+        val path = prefs.getString("custom_bg_path", null)
+        return if (!path.isNullOrBlank() && File(path).exists()) path else null
+    }
+
+    private fun loadBackgroundOpacity(): Float {
+        return prefs.getFloat("bg_opacity", 0.55f).coerceIn(0f, 1f)
+    }
+
+    private fun loadGlassBlurRadius(): Float {
+        return prefs.getFloat("glass_blur", 14f).coerceIn(0f, 24f)
     }
 }

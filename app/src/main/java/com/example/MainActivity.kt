@@ -11,8 +11,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -20,26 +22,42 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.example.model.AppUiStyle
 import com.example.model.TvNavTab
 import com.example.ui.components.NowPlayingMiniBar
+import com.example.ui.components.QrBackgroundDialog
 import com.example.ui.components.TvSidebar
 import com.example.ui.screens.FolderBrowserScreen
+import com.example.ui.screens.InfoScreen
 import com.example.ui.screens.NowPlayingScreen
 import com.example.ui.screens.PlaylistsScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SongsListScreen
+import com.example.ui.theme.AppleTvDeepBg
+import com.example.ui.theme.AppleTvGlowBottom
+import com.example.ui.theme.AppleTvGlowTop
+import com.example.ui.theme.AppleTvMidBg
 import com.example.ui.theme.LightBackground
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MusicPlayerViewModel
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -50,7 +68,13 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            MyApplicationTheme {
+            val uiStyle by viewModel.uiStyle.collectAsStateWithLifecycle()
+            val customBackgroundPath by viewModel.customBackgroundPath.collectAsStateWithLifecycle()
+
+            MyApplicationTheme(
+                uiStyle = uiStyle,
+                hasCustomBackground = customBackgroundPath != null
+            ) {
                 TvMusicApp(viewModel = viewModel)
             }
         }
@@ -121,6 +145,14 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
     val selectedFormat by viewModel.selectedFormat.collectAsStateWithLifecycle()
     val sortOption by viewModel.sortOption.collectAsStateWithLifecycle()
 
+    val uiStyle by viewModel.uiStyle.collectAsStateWithLifecycle()
+    val customBackgroundPath by viewModel.customBackgroundPath.collectAsStateWithLifecycle()
+    val backgroundOpacity by viewModel.backgroundOpacity.collectAsStateWithLifecycle()
+    val glassBlurRadius by viewModel.glassBlurRadius.collectAsStateWithLifecycle()
+    val isQrDialogVisible by viewModel.isQrDialogVisible.collectAsStateWithLifecycle()
+    val qrServerUrl by viewModel.qrServerUrl.collectAsStateWithLifecycle()
+    val qrUploadStatus by viewModel.qrUploadStatus.collectAsStateWithLifecycle()
+
     // Storage permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -146,6 +178,16 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
         }
     }
 
+    // Zero-permission Android Photo Picker for custom TV background
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.setBackgroundFromUri(uri)
+            Toast.makeText(context, "Đã cập nhật ảnh nền TV!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
@@ -154,148 +196,251 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
         }
     }
 
-    Scaffold(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(LightBackground),
-        containerColor = LightBackground,
-        contentWindowInsets = WindowInsets.safeDrawing
-    ) { innerPadding ->
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            // TV Left Sidebar
-            TvSidebar(
-                selectedTab = currentTab,
-                onTabSelected = { tab ->
-                    viewModel.selectTab(tab)
-                },
-                isPlaying = isPlaying,
-                sleepTimerSeconds = sleepTimerSeconds
-            )
-
-            // Main Content Area
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Layer 1: Base theme backdrop (Apple TV Cinema Ambient or Crisp Light)
+        if (uiStyle == AppUiStyle.APPLE_TV_GLASS) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(AppleTvDeepBg, AppleTvMidBg, AppleTvDeepBg)
+                    )
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(AppleTvGlowTop.copy(alpha = 0.65f), Color.Transparent),
+                        center = Offset(size.width * 0.22f, size.height * 0.20f),
+                        radius = size.maxDimension * 0.55f
+                    ),
+                    center = Offset(size.width * 0.22f, size.height * 0.20f),
+                    radius = size.maxDimension * 0.55f
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(AppleTvGlowBottom.copy(alpha = 0.55f), Color.Transparent),
+                        center = Offset(size.width * 0.82f, size.height * 0.80f),
+                        radius = size.maxDimension * 0.60f
+                    ),
+                    center = Offset(size.width * 0.82f, size.height * 0.80f),
+                    radius = size.maxDimension * 0.60f
+                )
+            }
+        } else {
             Box(
                 modifier = Modifier
-                    .weight(1f)
                     .fillMaxSize()
+                    .background(LightBackground)
+            )
+        }
+
+        // Layer 2: Custom User Background Photo (from QR upload or device Photo Picker)
+        if (customBackgroundPath != null) {
+            val imageBlurModifier = if (uiStyle == AppUiStyle.APPLE_TV_GLASS && glassBlurRadius > 0.5f) {
+                Modifier.blur(glassBlurRadius.dp)
+            } else {
+                Modifier
+            }
+
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(File(customBackgroundPath!!))
+                    .crossfade(true)
+                    .build(),
+                contentDescription = "Ảnh nền tùy chỉnh",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(backgroundOpacity.coerceIn(0f, 1f))
+                    .then(imageBlurModifier)
+            )
+
+            // Subtle readability veil over background image
+            val scrimColor = if (uiStyle == AppUiStyle.APPLE_TV_GLASS) {
+                Color(0xFF060A14).copy(alpha = 0.26f * backgroundOpacity)
+            } else {
+                Color.White.copy(alpha = 0.14f)
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(scrimColor)
+            )
+        }
+
+        // Layer 3: Foreground TV App Chrome & Screens
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets.safeDrawing
+        ) { innerPadding ->
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
             ) {
-                when (currentTab) {
-                    TvNavTab.FOLDERS -> {
-                        FolderBrowserScreen(
-                            folders = allFolders,
-                            browsingFolder = browsingFolder,
-                            folderTracks = folderTracks,
-                            currentTrack = currentTrack,
-                            isPlaying = isPlaying,
-                            isScanning = isScanning,
-                            onOpenFolder = { folder -> viewModel.openFolder(folder) },
-                            onCloseFolder = { viewModel.closeFolder() },
-                            onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
-                            onPlayFolder = { folder, shuffle -> viewModel.playFolder(folder, shuffle) },
-                            onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
-                            onRefreshScan = { viewModel.scanLibrary() },
-                            onPickStorageFolder = { folderPickerLauncher.launch(null) }
-                        )
+                TvSidebar(
+                    selectedTab = currentTab,
+                    onTabSelected = { tab -> viewModel.selectTab(tab) },
+                    isPlaying = isPlaying,
+                    sleepTimerSeconds = sleepTimerSeconds,
+                    onToggleStyle = { viewModel.toggleUiStyle() },
+                    onOpenQrBackground = { viewModel.openQrBackgroundDialog() }
+                )
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxSize()
+                ) {
+                    when (currentTab) {
+                        TvNavTab.FOLDERS -> {
+                            FolderBrowserScreen(
+                                folders = allFolders,
+                                browsingFolder = browsingFolder,
+                                folderTracks = folderTracks,
+                                currentTrack = currentTrack,
+                                isPlaying = isPlaying,
+                                isScanning = isScanning,
+                                onOpenFolder = { folder -> viewModel.openFolder(folder) },
+                                onCloseFolder = { viewModel.closeFolder() },
+                                onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
+                                onPlayFolder = { folder, shuffle -> viewModel.playFolder(folder, shuffle) },
+                                onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
+                                onRefreshScan = { viewModel.scanLibrary() },
+                                onPickStorageFolder = { folderPickerLauncher.launch(null) }
+                            )
+                        }
+
+                        TvNavTab.ALL_SONGS -> {
+                            SongsListScreen(
+                                tracks = filteredTracks,
+                                currentTrack = currentTrack,
+                                isPlaying = isPlaying,
+                                searchQuery = searchQuery,
+                                selectedFormat = selectedFormat,
+                                sortOption = sortOption,
+                                onSearchChanged = { viewModel.setSearchQuery(it) },
+                                onFormatSelected = { viewModel.selectFormat(it) },
+                                onSortChanged = { viewModel.setSortOption(it) },
+                                onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
+                                onPlayAll = { shuffle ->
+                                    if (filteredTracks.isNotEmpty()) {
+                                        val q = if (shuffle) filteredTracks.shuffled() else filteredTracks
+                                        viewModel.playTrack(q.first(), q)
+                                    }
+                                },
+                                onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) }
+                            )
+                        }
+
+                        TvNavTab.NOW_PLAYING -> {
+                            NowPlayingScreen(
+                                currentTrack = currentTrack,
+                                isPlaying = isPlaying,
+                                currentPositionMs = currentPositionMs,
+                                durationMs = durationMs,
+                                repeatMode = repeatMode,
+                                isShuffle = isShuffle,
+                                equalizerPreset = equalizerPreset,
+                                sleepTimerSeconds = sleepTimerSeconds,
+                                visualizerBands = visualizerBands,
+                                playlist = playlist,
+                                onPlayPause = { viewModel.togglePlayPause() },
+                                onSkipNext = { viewModel.skipNext() },
+                                onSkipPrevious = { viewModel.skipPrevious() },
+                                onSeekTo = { viewModel.seekTo(it) },
+                                onSeekForward = { viewModel.seekForward() },
+                                onSeekRewind = { viewModel.seekRewind() },
+                                onToggleShuffle = { viewModel.toggleShuffle() },
+                                onCycleRepeatMode = { viewModel.cycleRepeatMode() },
+                                onSetEqualizer = { viewModel.setEqualizer(it) },
+                                onSetSleepTimer = { viewModel.setSleepTimer(it) },
+                                onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
+                                onSelectQueueTrack = { track -> viewModel.playTrack(track, playlist) }
+                            )
+                        }
+
+                        TvNavTab.PLAYLISTS -> {
+                            PlaylistsScreen(
+                                favoriteTracks = favoriteTracks,
+                                recentTracks = recentTracks,
+                                currentTrack = currentTrack,
+                                isPlaying = isPlaying,
+                                onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
+                                onPlayAll = { tracks, shuffle ->
+                                    if (tracks.isNotEmpty()) {
+                                        val q = if (shuffle) tracks.shuffled() else tracks
+                                        viewModel.playTrack(q.first(), q)
+                                    }
+                                },
+                                onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) }
+                            )
+                        }
+
+                        TvNavTab.SETTINGS -> {
+                            SettingsScreen(
+                                uiStyle = uiStyle,
+                                customBackgroundPath = customBackgroundPath,
+                                backgroundOpacity = backgroundOpacity,
+                                glassBlurRadius = glassBlurRadius,
+                                currentEqualizer = equalizerPreset,
+                                sleepTimerSeconds = sleepTimerSeconds,
+                                totalTracksCount = allTracks.size,
+                                totalFoldersCount = allFolders.size,
+                                isScanning = isScanning,
+                                onSetUiStyle = { viewModel.setUiStyle(it) },
+                                onSetBackgroundOpacity = { viewModel.setBackgroundOpacity(it) },
+                                onSetGlassBlurRadius = { viewModel.setGlassBlurRadius(it) },
+                                onOpenQrBackground = { viewModel.openQrBackgroundDialog() },
+                                onPickBackgroundImage = {
+                                    photoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                onClearBackground = { viewModel.clearCustomBackground() },
+                                onSetEqualizer = { viewModel.setEqualizer(it) },
+                                onSetSleepTimer = { viewModel.setSleepTimer(it) },
+                                onRefreshScan = { viewModel.scanLibrary() },
+                                onPickStorageFolder = { folderPickerLauncher.launch(null) }
+                            )
+                        }
+
+                        TvNavTab.INFO -> {
+                            InfoScreen()
+                        }
                     }
 
-                    TvNavTab.ALL_SONGS -> {
-                        SongsListScreen(
-                            tracks = filteredTracks,
-                            currentTrack = currentTrack,
-                            isPlaying = isPlaying,
-                            searchQuery = searchQuery,
-                            selectedFormat = selectedFormat,
-                            sortOption = sortOption,
-                            onSearchChanged = { viewModel.setSearchQuery(it) },
-                            onFormatSelected = { viewModel.selectFormat(it) },
-                            onSortChanged = { viewModel.setSortOption(it) },
-                            onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
-                            onPlayAll = { shuffle ->
-                                if (filteredTracks.isNotEmpty()) {
-                                    val q = if (shuffle) filteredTracks.shuffled() else filteredTracks
-                                    viewModel.playTrack(q.first(), q)
-                                }
-                            },
-                            onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) }
-                        )
-                    }
-
-                    TvNavTab.NOW_PLAYING -> {
-                        NowPlayingScreen(
+                    if (currentTab != TvNavTab.NOW_PLAYING && currentTrack != null) {
+                        NowPlayingMiniBar(
                             currentTrack = currentTrack,
                             isPlaying = isPlaying,
                             currentPositionMs = currentPositionMs,
                             durationMs = durationMs,
-                            repeatMode = repeatMode,
-                            isShuffle = isShuffle,
-                            equalizerPreset = equalizerPreset,
-                            sleepTimerSeconds = sleepTimerSeconds,
-                            visualizerBands = visualizerBands,
-                            playlist = playlist,
                             onPlayPause = { viewModel.togglePlayPause() },
                             onSkipNext = { viewModel.skipNext() },
-                            onSkipPrevious = { viewModel.skipPrevious() },
-                            onSeekTo = { viewModel.seekTo(it) },
-                            onSeekForward = { viewModel.seekForward() },
-                            onSeekRewind = { viewModel.seekRewind() },
-                            onToggleShuffle = { viewModel.toggleShuffle() },
-                            onCycleRepeatMode = { viewModel.cycleRepeatMode() },
-                            onSetEqualizer = { viewModel.setEqualizer(it) },
-                            onSetSleepTimer = { viewModel.setSleepTimer(it) },
-                            onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
-                            onSelectQueueTrack = { track -> viewModel.playTrack(track, playlist) }
+                            onOpenFullscreen = { viewModel.selectTab(TvNavTab.NOW_PLAYING) },
+                            modifier = Modifier.align(Alignment.BottomCenter)
                         )
                     }
-
-                    TvNavTab.PLAYLISTS -> {
-                        PlaylistsScreen(
-                            favoriteTracks = favoriteTracks,
-                            recentTracks = recentTracks,
-                            currentTrack = currentTrack,
-                            isPlaying = isPlaying,
-                            onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
-                            onPlayAll = { tracks, shuffle ->
-                                if (tracks.isNotEmpty()) {
-                                    val q = if (shuffle) tracks.shuffled() else tracks
-                                    viewModel.playTrack(q.first(), q)
-                                }
-                            },
-                            onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) }
-                        )
-                    }
-
-                    TvNavTab.SETTINGS -> {
-                        SettingsScreen(
-                            currentEqualizer = equalizerPreset,
-                            sleepTimerSeconds = sleepTimerSeconds,
-                            totalTracksCount = allTracks.size,
-                            totalFoldersCount = allFolders.size,
-                            isScanning = isScanning,
-                            onSetEqualizer = { viewModel.setEqualizer(it) },
-                            onSetSleepTimer = { viewModel.setSleepTimer(it) },
-                            onRefreshScan = { viewModel.scanLibrary() },
-                            onPickStorageFolder = { folderPickerLauncher.launch(null) }
-                        )
-                    }
-                }
-
-                // Persistent Mini Player at Bottom (when browsing other tabs)
-                if (currentTab != TvNavTab.NOW_PLAYING && currentTrack != null) {
-                    NowPlayingMiniBar(
-                        currentTrack = currentTrack,
-                        isPlaying = isPlaying,
-                        currentPositionMs = currentPositionMs,
-                        durationMs = durationMs,
-                        onPlayPause = { viewModel.togglePlayPause() },
-                        onSkipNext = { viewModel.skipNext() },
-                        onOpenFullscreen = { viewModel.selectTab(TvNavTab.NOW_PLAYING) },
-                        modifier = Modifier.align(Alignment.BottomCenter)
-                    )
                 }
             }
+        }
+
+        // Layer 4: QR Code Background Transfer Dialog
+        if (isQrDialogVisible) {
+            QrBackgroundDialog(
+                serverUrl = qrServerUrl,
+                uploadStatus = qrUploadStatus,
+                customBackgroundPath = customBackgroundPath,
+                backgroundOpacity = backgroundOpacity,
+                onOpacityChange = { viewModel.setBackgroundOpacity(it) },
+                onPickLocalImage = {
+                    photoPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                onClearBackground = { viewModel.clearCustomBackground() },
+                onDismiss = { viewModel.closeQrBackgroundDialog() }
+            )
         }
     }
 }

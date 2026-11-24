@@ -1,16 +1,19 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.audio.AudioPlaybackManager
 import com.example.data.MusicRepository
+import com.example.model.AppUiStyle
 import com.example.model.AudioFolder
 import com.example.model.AudioTrack
 import com.example.model.EqualizerPreset
-import com.example.model.RepeatMode
 import com.example.model.SortOption
 import com.example.model.TvNavTab
+import com.example.qr.LocalBackgroundServer
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +43,32 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _sortOption = MutableStateFlow(SortOption.TITLE)
     val sortOption: StateFlow<SortOption> = _sortOption.asStateFlow()
+
+    // Appearance & QR Upload Dialog State
+    val uiStyle = repository.uiStyle
+    val customBackgroundPath = repository.customBackgroundPath
+    val backgroundOpacity = repository.backgroundOpacity
+    val glassBlurRadius = repository.glassBlurRadius
+
+    private val _isQrDialogVisible = MutableStateFlow(false)
+    val isQrDialogVisible: StateFlow<Boolean> = _isQrDialogVisible.asStateFlow()
+
+    private val _qrServerUrl = MutableStateFlow<String?>(null)
+    val qrServerUrl: StateFlow<String?> = _qrServerUrl.asStateFlow()
+
+    private val _qrUploadStatus = MutableStateFlow("Đang chờ kết nối từ điện thoại...")
+    val qrUploadStatus: StateFlow<String> = _qrUploadStatus.asStateFlow()
+
+    private val localServer = LocalBackgroundServer(
+        context = application,
+        onImageUploaded = { savedPath ->
+            repository.setCustomBackgroundPath(savedPath)
+            _qrUploadStatus.value = "Đã cập nhật ảnh nền mới từ điện thoại!"
+        },
+        onStatusUpdate = { status ->
+            _qrUploadStatus.value = status
+        }
+    )
 
     // Repository flows
     val allTracks = repository.allTracks
@@ -124,6 +153,60 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _sortOption.value = sort
     }
 
+    fun setUiStyle(style: AppUiStyle) {
+        repository.setUiStyle(style)
+    }
+
+    fun toggleUiStyle() {
+        val next = if (uiStyle.value == AppUiStyle.CLASSIC_LIGHT) {
+            AppUiStyle.APPLE_TV_GLASS
+        } else {
+            AppUiStyle.CLASSIC_LIGHT
+        }
+        repository.setUiStyle(next)
+    }
+
+    fun setBackgroundOpacity(opacity: Float) {
+        repository.setBackgroundOpacity(opacity)
+    }
+
+    fun setGlassBlurRadius(blur: Float) {
+        repository.setGlassBlurRadius(blur)
+    }
+
+    fun setBackgroundFromUri(uri: Uri) {
+        viewModelScope.launch {
+            val saved = repository.saveCustomBackgroundFromUri(uri)
+            if (saved != null) {
+                _qrUploadStatus.value = "Đã chọn ảnh nền từ thiết bị!"
+            }
+        }
+    }
+
+    fun clearCustomBackground() {
+        repository.clearCustomBackground()
+    }
+
+    fun openQrBackgroundDialog() {
+        _isQrDialogVisible.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = localServer.start()
+                _qrServerUrl.value = url
+                _qrUploadStatus.value = "Quét mã QR bằng điện thoại (cùng Wi-Fi) để gửi ảnh"
+            } catch (e: Exception) {
+                _qrUploadStatus.value = "Không thể mở máy chủ cục bộ: ${e.message}"
+            }
+        }
+    }
+
+    fun closeQrBackgroundDialog() {
+        _isQrDialogVisible.value = false
+        viewModelScope.launch(Dispatchers.IO) {
+            localServer.stop()
+        }
+    }
+
     fun playTrack(track: AudioTrack, queue: List<AudioTrack>) {
         repository.addToRecent(track)
         playbackManager.playTrack(track, queue)
@@ -154,6 +237,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     override fun onCleared() {
         super.onCleared()
+        localServer.stop()
         playbackManager.release()
     }
 }

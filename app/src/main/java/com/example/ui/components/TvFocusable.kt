@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.key.onKeyEvent
@@ -30,30 +31,31 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.example.ui.theme.AudioPrimary
-import com.example.ui.theme.FocusBorder
-import com.example.ui.theme.FocusHoverBg
-import com.example.ui.theme.FocusShadow
-import com.example.ui.theme.LightBorder
-import com.example.ui.theme.LightSurfaceCard
+import com.example.ui.theme.LocalTvStyle
 
 @Composable
 fun Modifier.tvFocusable(
     tag: String,
     shape: Shape = RoundedCornerShape(14.dp),
     scaleUpFactor: Float = 1.03f,
-    defaultBgColor: Color = LightSurfaceCard,
-    focusedBgColor: Color = FocusHoverBg,
-    defaultBorderColor: Color = LightBorder,
-    focusedBorderColor: Color = FocusBorder,
+    defaultBgColor: Color = Color.Unspecified,
+    focusedBgColor: Color = Color.Unspecified,
+    defaultBorderColor: Color = Color.Unspecified,
+    focusedBorderColor: Color = Color.Unspecified,
     elevation: Dp = 1.dp,
     onClick: () -> Unit
 ): Modifier {
+    val style = LocalTvStyle.current
     var isFocused by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
     val isActive = isFocused || isHovered
+
+    val resolvedDefaultBg = if (defaultBgColor != Color.Unspecified) defaultBgColor else style.cardSurface
+    val resolvedFocusedBg = if (focusedBgColor != Color.Unspecified) focusedBgColor else style.focusedSurface
+    val resolvedDefaultBorder = if (defaultBorderColor != Color.Unspecified) defaultBorderColor else style.borderColor
+    val resolvedFocusedBorder = if (focusedBorderColor != Color.Unspecified) focusedBorderColor else style.focusedBorderColor
 
     val scale by animateFloatAsState(
         targetValue = if (isActive) scaleUpFactor else 1.0f,
@@ -61,24 +63,42 @@ fun Modifier.tvFocusable(
         label = "tv_mouse_scale"
     )
 
+    val activeElevation = if (style.isGlassStyle) {
+        if (isActive) elevation + 10.dp else elevation + 2.dp
+    } else {
+        if (isActive) elevation + 4.dp else elevation
+    }
+
+    val borderModifier = if (style.isGlassStyle && !isActive && defaultBorderColor == Color.Unspecified) {
+        Modifier.border(
+            width = 1.dp,
+            brush = Brush.verticalGradient(
+                colors = listOf(style.glassSpecularTop, style.glassSpecularBottom)
+            ),
+            shape = shape
+        )
+    } else {
+        Modifier.border(
+            BorderStroke(
+                width = if (isActive) 1.75.dp else 1.dp,
+                color = if (isActive) resolvedFocusedBorder else resolvedDefaultBorder
+            ),
+            shape = shape
+        )
+    }
+
     return this
         .testTag(tag)
         .scale(scale)
         .shadow(
-            elevation = if (isActive) elevation + 4.dp else elevation,
+            elevation = activeElevation,
             shape = shape,
-            ambientColor = if (isActive) FocusShadow else Color(0x14000000),
-            spotColor = if (isActive) FocusBorder else Color(0x1A000000)
+            ambientColor = if (isActive) style.focusShadowColor else Color(0x18000000),
+            spotColor = if (isActive) resolvedFocusedBorder else Color(0x22000000)
         )
         .clip(shape)
-        .background(if (isActive) focusedBgColor else defaultBgColor)
-        .border(
-            BorderStroke(
-                width = if (isActive) 1.5.dp else 1.dp,
-                color = if (isActive) focusedBorderColor else defaultBorderColor
-            ),
-            shape = shape
-        )
+        .background(if (isActive) resolvedFocusedBg else resolvedDefaultBg)
+        .then(borderModifier)
         .onFocusChanged { isFocused = it.isFocused }
         .focusable()
         .hoverable(interactionSource = interactionSource)

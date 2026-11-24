@@ -48,19 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.example.model.AudioFolder
 import com.example.model.AudioTrack
 import com.example.ui.components.tvFocusable
-import com.example.ui.theme.AudioAmber
-import com.example.ui.theme.AudioEmerald
-import com.example.ui.theme.AudioPrimary
-import com.example.ui.theme.AudioPrimaryLight
-import com.example.ui.theme.AudioRed
-import com.example.ui.theme.FocusHoverBg
-import com.example.ui.theme.LightBorder
-import com.example.ui.theme.LightSurface
-import com.example.ui.theme.LightSurfaceCard
-import com.example.ui.theme.LightSurfaceVariant
-import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.LocalTvStyle
 
 @Composable
 fun FolderBrowserScreen(
@@ -84,7 +72,6 @@ fun FolderBrowserScreen(
             onCloseFolder()
         }
 
-        // Inside a specific folder view
         FolderDetailView(
             folder = browsingFolder,
             tracks = folderTracks,
@@ -97,7 +84,6 @@ fun FolderBrowserScreen(
             modifier = modifier
         )
     } else {
-        // Folders list overview
         FolderOverviewView(
             folders = folders,
             isScanning = isScanning,
@@ -118,12 +104,13 @@ private fun FolderOverviewView(
     onPickStorageFolder: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val style = LocalTvStyle.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 28.dp, vertical = 20.dp)
     ) {
-        // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -132,25 +119,23 @@ private fun FolderOverviewView(
             Column {
                 Text(
                     text = "Duyệt Thư Mục Thiết Bị",
-                    color = TextPrimary,
+                    color = style.textPrimary,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = "Bộ nhớ máy, thẻ nhớ & ổ đĩa USB cắm ngoài trên TV",
-                    color = TextSecondary,
+                    color = style.textSecondary,
                     fontSize = 13.sp
                 )
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Pick Folder Button
                 Row(
                     modifier = Modifier
                         .tvFocusable(
                             tag = "btn_pick_folder",
                             shape = RoundedCornerShape(10.dp),
-                            defaultBgColor = LightSurface,
                             onClick = onPickStorageFolder
                         )
                         .padding(horizontal = 14.dp, vertical = 9.dp),
@@ -159,13 +144,13 @@ private fun FolderOverviewView(
                     Icon(
                         imageVector = Icons.Default.CreateNewFolder,
                         contentDescription = "Chọn thư mục",
-                        tint = AudioPrimary,
+                        tint = style.accentColor,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Mở thư mục khác",
-                        color = TextPrimary,
+                        color = style.textPrimary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -173,13 +158,12 @@ private fun FolderOverviewView(
 
                 Spacer(modifier = Modifier.width(10.dp))
 
-                // Scan Library Button
                 Row(
                     modifier = Modifier
                         .tvFocusable(
                             tag = "btn_refresh_scan",
                             shape = RoundedCornerShape(10.dp),
-                            defaultBgColor = if (isScanning) AudioPrimaryLight else LightSurface,
+                            defaultBgColor = if (isScanning) style.accentLightBg else Color.Unspecified,
                             onClick = onRefreshScan
                         )
                         .padding(horizontal = 14.dp, vertical = 9.dp),
@@ -187,7 +171,7 @@ private fun FolderOverviewView(
                 ) {
                     if (isScanning) {
                         CircularProgressIndicator(
-                            color = AudioPrimary,
+                            color = style.accentColor,
                             strokeWidth = 2.dp,
                             modifier = Modifier.size(16.dp)
                         )
@@ -195,14 +179,14 @@ private fun FolderOverviewView(
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Quét lại",
-                            tint = AudioPrimary,
+                            tint = style.accentColor,
                             modifier = Modifier.size(18.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = if (isScanning) "Đang quét..." else "Quét lại",
-                        color = TextPrimary,
+                        color = style.textPrimary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -223,19 +207,19 @@ private fun FolderOverviewView(
                     Icon(
                         imageVector = Icons.Default.FolderOpen,
                         contentDescription = null,
-                        tint = TextMuted,
+                        tint = style.textMuted,
                         modifier = Modifier.size(56.dp)
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
                         text = "Không tìm thấy thư mục âm nhạc nào",
-                        color = TextPrimary,
+                        color = style.textPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         text = "Nhấn 'Quét lại' hoặc 'Mở thư mục khác' để nạp file nhạc từ thiết bị hoặc USB",
-                        color = TextSecondary,
+                        color = style.textSecondary,
                         fontSize = 13.sp
                     )
                 }
@@ -264,6 +248,7 @@ private fun FolderCard(
     folder: AudioFolder,
     onOpen: () -> Unit
 ) {
+    val style = LocalTvStyle.current
     val isDemoFolder = folder.name.contains("Demo", ignoreCase = true)
 
     Row(
@@ -273,7 +258,6 @@ private fun FolderCard(
                 tag = "folder_card_${folder.name.hashCode()}",
                 shape = RoundedCornerShape(14.dp),
                 scaleUpFactor = 1.02f,
-                defaultBgColor = LightSurfaceCard,
                 onClick = onOpen
             )
             .padding(16.dp),
@@ -284,11 +268,11 @@ private fun FolderCard(
                 .size(48.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(
-                    if (isDemoFolder) Color(0xFFFEF3C7) else Color(0xFFEFF6FF)
+                    if (isDemoFolder) style.amberBg else style.accentLightBg
                 )
                 .border(
                     1.dp,
-                    if (isDemoFolder) Color(0xFFFDE68A) else Color(0xFFDBEAFE),
+                    if (isDemoFolder) style.amberBorder else style.accentLightBorder,
                     RoundedCornerShape(10.dp)
                 ),
             contentAlignment = Alignment.Center
@@ -296,7 +280,7 @@ private fun FolderCard(
             Icon(
                 imageVector = Icons.Default.Folder,
                 contentDescription = folder.name,
-                tint = if (isDemoFolder) AudioAmber else AudioPrimary,
+                tint = if (isDemoFolder) style.amberColor else style.accentColor,
                 modifier = Modifier.size(26.dp)
             )
         }
@@ -306,7 +290,7 @@ private fun FolderCard(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = folder.name,
-                color = TextPrimary,
+                color = style.textPrimary,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -319,13 +303,13 @@ private fun FolderCard(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFFF1F5F9))
-                        .border(1.dp, LightBorder, RoundedCornerShape(6.dp))
+                        .background(style.surfaceVariant)
+                        .border(1.dp, style.borderColor, RoundedCornerShape(6.dp))
                         .padding(horizontal = 7.dp, vertical = 2.dp)
                 ) {
                     Text(
                         text = "${folder.trackCount} bài hát",
-                        color = TextSecondary,
+                        color = style.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -336,12 +320,12 @@ private fun FolderCard(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xFFFEF3C7))
+                            .background(style.amberBg)
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = "FLAC/MP3",
-                            color = AudioAmber,
+                            color = style.amberColor,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -364,24 +348,23 @@ private fun FolderDetailView(
     onToggleFavorite: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val style = LocalTvStyle.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 28.dp, vertical = 20.dp)
     ) {
-        // Breadcrumb & Back bar
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Back Button
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(44.dp)
                     .tvFocusable(
                         tag = "btn_folder_back",
                         shape = CircleShape,
-                        defaultBgColor = LightSurface,
                         onClick = onBack
                     ),
                 contentAlignment = Alignment.Center
@@ -389,7 +372,7 @@ private fun FolderDetailView(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Quay lại",
-                    tint = TextPrimary,
+                    tint = style.textPrimary,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -399,7 +382,7 @@ private fun FolderDetailView(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = folder.name,
-                    color = TextPrimary,
+                    color = style.textPrimary,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -407,21 +390,21 @@ private fun FolderDetailView(
                 )
                 Text(
                     text = folder.path,
-                    color = TextSecondary,
+                    color = style.textSecondary,
                     fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
 
-            // Play All Button
             Row(
                 modifier = Modifier
                     .tvFocusable(
                         tag = "btn_folder_play_all",
                         shape = RoundedCornerShape(10.dp),
-                        defaultBgColor = AudioPrimary,
-                        focusedBgColor = Color(0xFF1E40AF),
+                        defaultBgColor = style.accentColor,
+                        focusedBgColor = style.accentColor.copy(alpha = 0.85f),
+                        defaultBorderColor = style.accentColor,
                         onClick = { onPlayAll(false) }
                     )
                     .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -430,13 +413,13 @@ private fun FolderDetailView(
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "Phát tất cả",
-                    tint = Color.White,
+                    tint = style.accentContentColor,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "Phát tất cả",
-                    color = Color.White,
+                    color = style.accentContentColor,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -444,13 +427,11 @@ private fun FolderDetailView(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            // Shuffle All Button
             Row(
                 modifier = Modifier
                     .tvFocusable(
                         tag = "btn_folder_shuffle",
                         shape = RoundedCornerShape(10.dp),
-                        defaultBgColor = LightSurface,
                         onClick = { onPlayAll(true) }
                     )
                     .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -459,13 +440,13 @@ private fun FolderDetailView(
                 Icon(
                     imageVector = Icons.Default.Shuffle,
                     contentDescription = "Xáo trộn",
-                    tint = TextPrimary,
+                    tint = style.textPrimary,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "Xáo trộn",
-                    color = TextPrimary,
+                    color = style.textPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -474,7 +455,6 @@ private fun FolderDetailView(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Tracks List
         LazyColumn(
             contentPadding = PaddingValues(bottom = 90.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -504,6 +484,8 @@ fun TrackRowItem(
     onPlay: () -> Unit,
     onToggleFavorite: () -> Unit
 ) {
+    val style = LocalTvStyle.current
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -511,15 +493,14 @@ fun TrackRowItem(
                 tag = "track_item_${track.id}",
                 shape = RoundedCornerShape(12.dp),
                 scaleUpFactor = 1.015f,
-                defaultBgColor = if (isCurrent) AudioPrimaryLight else LightSurfaceCard,
-                defaultBorderColor = if (isCurrent) Color(0xFF93C5FD) else LightBorder,
-                focusedBorderColor = AudioPrimary,
+                defaultBgColor = if (isCurrent) style.selectedPillSurface else Color.Unspecified,
+                defaultBorderColor = if (isCurrent) style.selectedBorderColor else Color.Unspecified,
+                focusedBorderColor = style.focusedBorderColor,
                 onClick = onPlay
             )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Track number or playing animation
         Box(
             modifier = Modifier.size(34.dp),
             contentAlignment = Alignment.Center
@@ -528,13 +509,13 @@ fun TrackRowItem(
                 Icon(
                     imageVector = Icons.Default.Equalizer,
                     contentDescription = "Đang phát",
-                    tint = AudioPrimary,
+                    tint = style.accentColor,
                     modifier = Modifier.size(20.dp)
                 )
             } else {
                 Text(
                     text = "%02d".format(index),
-                    color = if (isCurrent) AudioPrimary else TextSecondary,
+                    color = if (isCurrent) style.accentColor else style.textSecondary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -543,11 +524,10 @@ fun TrackRowItem(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        // Title and Artist
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = track.title,
-                color = if (isCurrent) AudioPrimary else TextPrimary,
+                color = if (isCurrent) style.accentColor else style.textPrimary,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -558,7 +538,7 @@ fun TrackRowItem(
 
             Text(
                 text = "${track.artist} • ${track.album}",
-                color = TextSecondary,
+                color = style.textSecondary,
                 fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -567,12 +547,15 @@ fun TrackRowItem(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        // Format Badge (FLAC, MP3, WAV, AAC, OGG) with natural tones
         val (badgeBg, badgeBorder, badgeText) = when (track.format) {
-            "FLAC" -> Triple(Color(0xFFFEF3C7), Color(0xFFFDE68A), AudioAmber)
-            "WAV" -> Triple(Color(0xFFEDE9FE), Color(0xFFDDD6FE), Color(0xFF6D28D9))
-            "OGG" -> Triple(Color(0xFFD1FAE5), Color(0xFFA7F3D0), AudioEmerald)
-            else -> Triple(AudioPrimaryLight, Color(0xFFBFDBFE), AudioPrimary)
+            "FLAC" -> Triple(style.amberBg, style.amberBorder, style.amberColor)
+            "WAV" -> if (style.isGlassStyle) {
+                Triple(Color(0x33A78BFA), Color(0x66A78BFA), Color(0xFFC4B5FD))
+            } else {
+                Triple(Color(0xFFEDE9FE), Color(0xFFDDD6FE), Color(0xFF6D28D9))
+            }
+            "OGG" -> Triple(style.emeraldBg, style.emeraldBorder, style.emeraldColor)
+            else -> Triple(style.accentLightBg, style.accentLightBorder, style.accentColor)
         }
 
         Box(
@@ -592,31 +575,31 @@ fun TrackRowItem(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        // Duration & Bitrate
         Column(horizontalAlignment = Alignment.End) {
             Text(
                 text = track.formattedDuration,
-                color = TextPrimary,
+                color = style.textPrimary,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium
             )
             Text(
                 text = track.bitrate,
-                color = TextSecondary,
+                color = style.textSecondary,
                 fontSize = 10.sp
             )
         }
 
         Spacer(modifier = Modifier.width(14.dp))
 
-        // Favorite Toggle Icon
         Box(
             modifier = Modifier
-                .size(36.dp)
+                .size(40.dp)
                 .tvFocusable(
                     tag = "fav_btn_${track.id}",
                     shape = CircleShape,
                     defaultBgColor = Color.Transparent,
+                    defaultBorderColor = Color.Transparent,
+                    elevation = 0.dp,
                     onClick = onToggleFavorite
                 ),
             contentAlignment = Alignment.Center
@@ -624,7 +607,7 @@ fun TrackRowItem(
             Icon(
                 imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 contentDescription = "Yêu thích",
-                tint = if (track.isFavorite) AudioRed else TextMuted,
+                tint = if (track.isFavorite) style.redColor else style.textMuted,
                 modifier = Modifier.size(20.dp)
             )
         }

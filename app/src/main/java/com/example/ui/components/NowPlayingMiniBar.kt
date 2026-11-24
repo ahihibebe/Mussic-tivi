@@ -27,20 +27,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.AudioTrack
-import com.example.ui.theme.AudioAmber
-import com.example.ui.theme.AudioPrimary
-import com.example.ui.theme.AudioPrimaryLight
-import com.example.ui.theme.LightBorder
-import com.example.ui.theme.LightSurface
-import com.example.ui.theme.LightSurfaceVariant
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.LocalTvStyle
 
 @Composable
 fun NowPlayingMiniBar(
@@ -55,25 +49,38 @@ fun NowPlayingMiniBar(
 ) {
     if (currentTrack == null) return
 
+    val style = LocalTvStyle.current
     val progress = if (durationMs > 0) {
         (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
 
+    val barShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
+    val barBorder = if (style.isGlassStyle) {
+        Modifier.border(
+            width = 1.dp,
+            brush = Brush.verticalGradient(
+                colors = listOf(style.glassSpecularTop, style.glassSpecularBottom)
+            ),
+            shape = barShape
+        )
+    } else {
+        Modifier.border(1.dp, style.borderColor, barShape)
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-            .background(LightSurface)
-            .border(1.dp, LightBorder, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .clip(barShape)
+            .background(style.sidebarSurface)
+            .then(barBorder)
     ) {
-        // Thin progress bar
         LinearProgressIndicator(
             progress = { progress },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(3.dp),
-            color = AudioPrimary,
-            trackColor = Color(0xFFE2E8F0)
+            color = style.accentColor,
+            trackColor = style.inactiveTrackColor
         )
 
         Row(
@@ -83,7 +90,6 @@ fun NowPlayingMiniBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Track Info clickable with mouse or remote to open Fullscreen
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -91,7 +97,9 @@ fun NowPlayingMiniBar(
                         tag = "minibar_track_info",
                         shape = RoundedCornerShape(12.dp),
                         defaultBgColor = Color.Transparent,
-                        focusedBgColor = LightSurfaceVariant,
+                        focusedBgColor = style.surfaceVariant,
+                        defaultBorderColor = Color.Transparent,
+                        elevation = 0.dp,
                         onClick = onOpenFullscreen
                     )
                     .padding(8.dp),
@@ -101,13 +109,15 @@ fun NowPlayingMiniBar(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF1E293B)),
+                        .background(
+                            if (style.isGlassStyle) Color(0x33FFFFFF) else Color(0xFF1E293B)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Default.Album else Icons.Default.Audiotrack,
                         contentDescription = "Cover",
-                        tint = Color(0xFFFDE68A),
+                        tint = if (style.isGlassStyle) style.accentColor else Color(0xFFFDE68A),
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -118,24 +128,23 @@ fun NowPlayingMiniBar(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = currentTrack.title,
-                            color = TextPrimary,
+                            color = style.textPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        // Format Badge
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(AudioPrimaryLight)
-                                .border(1.dp, Color(0xFFBFDBFE), RoundedCornerShape(4.dp))
+                                .background(style.accentLightBg)
+                                .border(1.dp, style.accentLightBorder, RoundedCornerShape(4.dp))
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
                                 text = currentTrack.format,
-                                color = AudioPrimary,
+                                color = style.accentColor,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -144,7 +153,7 @@ fun NowPlayingMiniBar(
 
                     Text(
                         text = "${currentTrack.artist} • ${currentTrack.formattedDuration}",
-                        color = TextSecondary,
+                        color = style.textSecondary,
                         fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -152,20 +161,19 @@ fun NowPlayingMiniBar(
                 }
             }
 
-            // Quick Controls
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Play / Pause Button with mouse hover
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(48.dp)
                         .tvFocusable(
                             tag = "minibar_play_pause",
                             shape = CircleShape,
                             scaleUpFactor = 1.08f,
-                            defaultBgColor = AudioPrimary,
-                            focusedBgColor = Color(0xFF1E40AF),
+                            defaultBgColor = style.accentColor,
+                            focusedBgColor = style.accentColor.copy(alpha = 0.85f),
+                            defaultBorderColor = style.accentColor,
                             onClick = onPlayPause
                         ),
                     contentAlignment = Alignment.Center
@@ -173,21 +181,20 @@ fun NowPlayingMiniBar(
                     Icon(
                         imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = if (isPlaying) "Tạm dừng" else "Phát",
-                        tint = Color.White,
+                        tint = style.accentContentColor,
                         modifier = Modifier.size(24.dp)
                     )
                 }
 
                 Spacer(modifier = Modifier.width(10.dp))
 
-                // Next Button
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(44.dp)
                         .tvFocusable(
                             tag = "minibar_skip_next",
                             shape = CircleShape,
-                            defaultBgColor = LightSurfaceVariant,
+                            defaultBgColor = style.surfaceVariant,
                             onClick = onSkipNext
                         ),
                     contentAlignment = Alignment.Center
@@ -195,7 +202,7 @@ fun NowPlayingMiniBar(
                     Icon(
                         imageVector = Icons.Default.SkipNext,
                         contentDescription = "Bài tiếp theo",
-                        tint = TextPrimary,
+                        tint = style.textPrimary,
                         modifier = Modifier.size(22.dp)
                     )
                 }
