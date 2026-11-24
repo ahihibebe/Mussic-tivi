@@ -208,6 +208,19 @@ fun MobileServerScreen(
                     )
                 }
 
+                if (uiState.isScanning || !uiState.lastScanSummary.isNullOrBlank()) {
+                    item(key = "live_scan_banner") {
+                        LiveScanStatusBanner(
+                            isScanning = uiState.isScanning,
+                            stageText = uiState.scanStageText,
+                            totalFound = uiState.tracks.size,
+                            newCount = uiState.scanNewCount,
+                            latestTitle = uiState.scanLatestTitle,
+                            summary = uiState.lastScanSummary
+                        )
+                    }
+                }
+
                 if (uiState.isScanning && uiState.tracks.isEmpty()) {
                     item(key = "scanning_indicator") {
                         Card(
@@ -231,7 +244,7 @@ fun MobileServerScreen(
                                 )
                                 Spacer(modifier = Modifier.width(14.dp))
                                 Text(
-                                    text = "Đang quét nhạc trên điện thoại...",
+                                    text = uiState.scanStageText.ifBlank { "Đang quét nhạc trên điện thoại..." },
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = TextPrimaryDark
                                 )
@@ -938,6 +951,86 @@ private fun EmptyTracksCard(
                 ) {
                     Text("Thư mục", color = TextPrimaryDark)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LiveScanStatusBanner(
+    isScanning: Boolean,
+    stageText: String,
+    totalFound: Int,
+    newCount: Int,
+    latestTitle: String?,
+    summary: String?
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("mobile_live_scan_banner"),
+        shape = RoundedCornerShape(14.dp),
+        color = if (isScanning) SkyBlueTint else EmeraldSoftBg,
+        border = BorderStroke(1.dp, if (isScanning) SkyBluePrimary.copy(alpha = 0.4f) else EmeraldBorder)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (isScanning) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = SkyBluePrimary,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    tint = EmeraldActive,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (isScanning) {
+                        stageText.ifBlank { "Đang quét kho nhạc..." }
+                    } else {
+                        summary ?: "Đã quét xong ($totalFound bài hát)"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isScanning) SkyBlueDeep else EmeraldTextDark,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (isScanning && !latestTitle.isNullOrBlank()) {
+                    Text(
+                        text = "+ Vừa thêm: $latestTitle",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondarySlate,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = Color.White,
+                border = BorderStroke(1.dp, if (isScanning) SkyBlueSoft else EmeraldBorder)
+            ) {
+                Text(
+                    text = if (newCount > 0) "$totalFound bài (+$newCount)" else "$totalFound bài",
+                    fontFamily = JetBrainsMonoFamily,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isScanning) SkyBlueDeep else EmeraldTextDark,
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                )
             }
         }
     }

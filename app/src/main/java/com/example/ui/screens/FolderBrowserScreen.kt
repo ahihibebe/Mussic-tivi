@@ -60,6 +60,12 @@ fun FolderBrowserScreen(
     currentTrack: AudioTrack?,
     isPlaying: Boolean,
     isScanning: Boolean,
+    totalTracksCount: Int = 0,
+    scanStageText: String = "",
+    scanNewCount: Int = 0,
+    scanLatestTitle: String? = null,
+    lastScanSummary: String? = null,
+    hasAudioPermission: Boolean = true,
     coverArtStyle: CoverArtStyle = CoverArtStyle.SPINNING_DISC,
     onOpenFolder: (AudioFolder) -> Unit,
     onCloseFolder: () -> Unit,
@@ -68,6 +74,8 @@ fun FolderBrowserScreen(
     onToggleFavorite: (String) -> Unit,
     onRefreshScan: () -> Unit,
     onPickStorageFolder: () -> Unit,
+    onPickAudioFiles: () -> Unit = {},
+    onRequestPermission: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (browsingFolder != null) {
@@ -91,9 +99,17 @@ fun FolderBrowserScreen(
         FolderOverviewView(
             folders = folders,
             isScanning = isScanning,
+            totalTracksCount = totalTracksCount,
+            scanStageText = scanStageText,
+            scanNewCount = scanNewCount,
+            scanLatestTitle = scanLatestTitle,
+            lastScanSummary = lastScanSummary,
+            hasAudioPermission = hasAudioPermission,
             onOpenFolder = onOpenFolder,
             onRefreshScan = onRefreshScan,
             onPickStorageFolder = onPickStorageFolder,
+            onPickAudioFiles = onPickAudioFiles,
+            onRequestPermission = onRequestPermission,
             modifier = modifier
         )
     }
@@ -103,9 +119,17 @@ fun FolderBrowserScreen(
 private fun FolderOverviewView(
     folders: List<AudioFolder>,
     isScanning: Boolean,
+    totalTracksCount: Int,
+    scanStageText: String,
+    scanNewCount: Int,
+    scanLatestTitle: String?,
+    lastScanSummary: String?,
+    hasAudioPermission: Boolean,
     onOpenFolder: (AudioFolder) -> Unit,
     onRefreshScan: () -> Unit,
     onPickStorageFolder: () -> Unit,
+    onPickAudioFiles: () -> Unit,
+    onRequestPermission: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val style = LocalTvStyle.current
@@ -135,6 +159,55 @@ private fun FolderOverviewView(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!hasAudioPermission) {
+                    Row(
+                        modifier = Modifier
+                            .tvFocusable(
+                                tag = "btn_grant_permission",
+                                shape = RoundedCornerShape(10.dp),
+                                defaultBgColor = style.amberBg,
+                                onClick = onRequestPermission
+                            )
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Cấp quyền đọc nhạc",
+                            color = style.amberColor,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                }
+
+                Row(
+                    modifier = Modifier
+                        .tvFocusable(
+                            tag = "btn_pick_files",
+                            shape = RoundedCornerShape(10.dp),
+                            onClick = onPickAudioFiles
+                        )
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = "Chọn file Download",
+                        tint = style.accentColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Chọn file (Download)",
+                        color = style.textPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
                 Row(
                     modifier = Modifier
                         .tvFocusable(
@@ -153,7 +226,7 @@ private fun FolderOverviewView(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Mở thư mục khác",
+                        text = "Mở thư mục",
                         color = style.textPrimary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
@@ -198,7 +271,71 @@ private fun FolderOverviewView(
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        if (isScanning || !lastScanSummary.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isScanning) style.accentLightBg else style.emeraldBg)
+                    .border(
+                        width = 1.dp,
+                        color = if (isScanning) style.accentLightBorder else style.emeraldBorder,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (isScanning) {
+                        CircularProgressIndicator(
+                            color = style.accentColor,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                    }
+                    Column {
+                        Text(
+                            text = if (isScanning) {
+                                scanStageText.ifBlank { "Đang quét kho nhạc..." }
+                            } else {
+                                lastScanSummary ?: "Quét hoàn tất ($totalTracksCount bài hát)"
+                            },
+                            color = if (isScanning) style.accentColor else style.emeraldColor,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (isScanning && !scanLatestTitle.isNullOrBlank()) {
+                            Text(
+                                text = "+ Vừa thêm: $scanLatestTitle",
+                                color = style.textSecondary,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Text(
+                    text = if (scanNewCount > 0) "$totalTracksCount bài (+$scanNewCount mới)" else "$totalTracksCount bài",
+                    color = if (isScanning) style.accentColor else style.emeraldColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         if (folders.isEmpty() && !isScanning) {
             Box(
@@ -216,13 +353,13 @@ private fun FolderOverviewView(
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "Không tìm thấy thư mục âm nhạc nào",
+                        text = if (!hasAudioPermission) "Chưa có quyền truy cập nhạc trên máy" else "Không tìm thấy thư mục âm nhạc nào",
                         color = style.textPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Nhấn 'Quét lại' hoặc 'Mở thư mục khác' để nạp file nhạc từ thiết bị hoặc USB",
+                        text = "Nhấn 'Quét lại', 'Chọn file (Download)' hoặc 'Mở thư mục' để nạp file nhạc từ thiết bị hoặc USB",
                         color = style.textSecondary,
                         fontSize = 13.sp
                     )

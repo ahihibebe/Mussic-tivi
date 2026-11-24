@@ -40,6 +40,18 @@ class MusicRepository(private val context: Context) {
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
+    private val _scanStageText = MutableStateFlow("")
+    val scanStageText: StateFlow<String> = _scanStageText.asStateFlow()
+
+    private val _scanNewCount = MutableStateFlow(0)
+    val scanNewCount: StateFlow<Int> = _scanNewCount.asStateFlow()
+
+    private val _scanLatestTitle = MutableStateFlow<String?>(null)
+    val scanLatestTitle: StateFlow<String?> = _scanLatestTitle.asStateFlow()
+
+    private val _lastScanSummary = MutableStateFlow<String?>(null)
+    val lastScanSummary: StateFlow<String?> = _lastScanSummary.asStateFlow()
+
     // Appearance & Background Preferences
     private val _uiStyle = MutableStateFlow(loadUiStyle())
     val uiStyle: StateFlow<AppUiStyle> = _uiStyle.asStateFlow()
@@ -60,10 +72,28 @@ class MusicRepository(private val context: Context) {
     val wifiMusicRole: StateFlow<WifiMusicRole> = _wifiMusicRole.asStateFlow()
 
     suspend fun refreshLibrary() = withContext(Dispatchers.IO) {
+        if (_isScanning.value) return@withContext
+        val previousIds = _allTracks.value.map { it.id }.toSet()
         _isScanning.value = true
+        _scanStageText.value = "Đang khởi tạo quét kho nhạc..."
+        _scanNewCount.value = 0
+        _scanLatestTitle.value = null
+        _lastScanSummary.value = null
+
         try {
-            val result = scanner.scanAll(extraTreeUris = loadSavedTreeUris())
             val favs = _favoriteIds.value
+            val result = scanner.scanAll(
+                extraTreeUris = loadSavedTreeUris(),
+                extraFileUris = loadSavedFileUris(),
+                onProgress = { progress ->
+                    val updated = progress.tracks.map { it.copy(isFavorite = favs.contains(it.id)) }
+                    _allTracks.value = updated
+                    _allFolders.value = progress.folders
+                    _scanStageText.value = progress.stageLabel
+                    _scanNewCount.value = updated.count { !previousIds.contains(it.id) }
+                    progress.latestTrackTitle?.let { _scanLatestTitle.value = it }
+                }
+            )
 
             val updatedTracks = result.tracks.map { track ->
                 track.copy(isFavorite = favs.contains(track.id))
@@ -71,8 +101,16 @@ class MusicRepository(private val context: Context) {
 
             _allTracks.value = updatedTracks
             _allFolders.value = result.folders
+            val newlyAdded = updatedTracks.count { !previousIds.contains(it.id) }
+            _scanNewCount.value = newlyAdded
+            _lastScanSummary.value = if (newlyAdded > 0 && previousIds.isNotEmpty()) {
+                "Quét xong: ${updatedTracks.size} bài hát (+$newlyAdded bài mới)"
+            } else {
+                "Quét xong: ${updatedTracks.size} bài hát (${result.folders.size} thư mục)"
+            }
         } finally {
             _isScanning.value = false
+            _scanLatestTitle.value = null
         }
     }
 
@@ -82,8 +120,22 @@ class MusicRepository(private val context: Context) {
         prefs.edit().putStringSet("saf_tree_uris", current).apply()
     }
 
+    fun addSafFiles(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val current = prefs.getStringSet("saf_file_uris", emptySet()).orEmpty().toMutableSet()
+        uris.forEach { current.add(it.toString()) }
+        prefs.edit().putStringSet("saf_file_uris", current).apply()
+    }
+
     private fun loadSavedTreeUris(): Set<Uri> {
         return prefs.getStringSet("saf_tree_uris", emptySet())
+            .orEmpty()
+            .mapNotNull { runCatching { Uri.parse(it) }.getOrNull() }
+            .toSet()
+    }
+
+    private fun loadSavedFileUris(): Set<Uri> {
+        return prefs.getStringSet("saf_file_uris", emptySet())
             .orEmpty()
             .mapNotNull { runCatching { Uri.parse(it) }.getOrNull() }
             .toSet()

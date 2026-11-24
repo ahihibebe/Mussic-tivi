@@ -109,6 +109,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val favoriteIds = repository.favoriteIds
     val recentTracks = repository.recentTracks
     val isScanning = repository.isScanning
+    val scanStageText = repository.scanStageText
+    val scanNewCount = repository.scanNewCount
+    val scanLatestTitle = repository.scanLatestTitle
+    val lastScanSummary = repository.lastScanSummary
 
     // Playback flows
     val currentTrack = playbackManager.currentTrack
@@ -230,6 +234,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun addSafFolder(uri: Uri) {
         repository.addSafFolder(uri)
+        scanLibrary()
+    }
+
+    fun addSafFiles(uris: List<Uri>) {
+        repository.addSafFiles(uris)
         scanLibrary()
     }
 

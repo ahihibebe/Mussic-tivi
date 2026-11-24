@@ -28,6 +28,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -146,6 +149,10 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
     val favoriteTracks by viewModel.favoriteTracks.collectAsStateWithLifecycle()
     val recentTracks by viewModel.recentTracks.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
+    val scanStageText by viewModel.scanStageText.collectAsStateWithLifecycle()
+    val scanNewCount by viewModel.scanNewCount.collectAsStateWithLifecycle()
+    val scanLatestTitle by viewModel.scanLatestTitle.collectAsStateWithLifecycle()
+    val lastScanSummary by viewModel.lastScanSummary.collectAsStateWithLifecycle()
 
     val currentTrack by viewModel.currentTrack.collectAsStateWithLifecycle()
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
@@ -183,11 +190,24 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
     val remoteError by viewModel.remoteError.collectAsStateWithLifecycle()
     val manualServerIp by viewModel.manualServerIp.collectAsStateWithLifecycle()
 
+    val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_AUDIO
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
     // Storage permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (isGranted) {
+        hasAudioPermission = isGranted ||
+            ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED
+        if (hasAudioPermission) {
             viewModel.scanLibrary()
         }
     }
@@ -207,6 +227,22 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
         }
     }
 
+    // Individual/multiple audio file picker (works for Download folder on Android 11+)
+    val audioFilesPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri ->
+                try {
+                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (_: Exception) {
+                }
+            }
+            Toast.makeText(context, "Đã thêm ${uris.size} bài hát", Toast.LENGTH_SHORT).show()
+            viewModel.addSafFiles(uris)
+        }
+    }
+
     // Zero-permission Android Photo Picker for custom TV background
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -218,11 +254,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
     }
 
     LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
-        } else {
-            permissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+        permissionLauncher.launch(audioPermission)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -334,6 +366,12 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 currentTrack = currentTrack,
                                 isPlaying = isPlaying,
                                 isScanning = isScanning,
+                                totalTracksCount = allTracks.size,
+                                scanStageText = scanStageText,
+                                scanNewCount = scanNewCount,
+                                scanLatestTitle = scanLatestTitle,
+                                lastScanSummary = lastScanSummary,
+                                hasAudioPermission = hasAudioPermission,
                                 coverArtStyle = coverArtStyle,
                                 onOpenFolder = { folder -> viewModel.openFolder(folder) },
                                 onCloseFolder = { viewModel.closeFolder() },
@@ -341,7 +379,11 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 onPlayFolder = { folder, shuffle -> viewModel.playFolder(folder, shuffle) },
                                 onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
                                 onRefreshScan = { viewModel.scanLibrary() },
-                                onPickStorageFolder = { folderPickerLauncher.launch(null) }
+                                onPickStorageFolder = { folderPickerLauncher.launch(null) },
+                                onPickAudioFiles = {
+                                    audioFilesPickerLauncher.launch(arrayOf("audio/*", "application/ogg", "application/octet-stream", "*/*"))
+                                },
+                                onRequestPermission = { permissionLauncher.launch(audioPermission) }
                             )
                         }
 

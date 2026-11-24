@@ -17,6 +17,13 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
 
+data class MobileScanProgress(
+    val tracks: List<MobileAudioTrack>,
+    val stageLabel: String,
+    val foundCount: Int,
+    val latestTrackTitle: String?
+)
+
 class PhoneMusicScanner(private val context: Context) {
 
     private val supportedExtensions = setOf(
@@ -31,89 +38,141 @@ class PhoneMusicScanner(private val context: Context) {
 
     suspend fun scanAll(
         extraTreeUris: Set<Uri> = emptySet(),
-        extraFileUris: Set<Uri> = emptySet()
+        extraFileUris: Set<Uri> = emptySet(),
+        onProgress: ((MobileScanProgress) -> Unit)? = null
     ): List<MobileAudioTrack> = withContext(Dispatchers.IO) {
         val tracks = mutableListOf<MobileAudioTrack>()
         val seenKeys = mutableSetOf<String>()
         val seenFingerprints = mutableSetOf<String>()
+        var lastEmitTime = 0L
 
-        fun tryAddTrack(track: MobileAudioTrack) {
+        fun emitProgress(stage: String, latestTitle: String?, force: Boolean = false) {
+            if (onProgress == null) return
+            val now = System.currentTimeMillis()
+            if (force || now - lastEmitTime >= 120L) {
+                lastEmitTime = now
+                onProgress(
+                    MobileScanProgress(
+                        tracks = tracks.sortedBy { it.title.lowercase(Locale.ROOT) },
+                        stageLabel = stage,
+                        foundCount = tracks.size,
+                        latestTrackTitle = latestTitle
+                    )
+                )
+            }
+        }
+
+        fun tryAddTrack(track: MobileAudioTrack, stage: String): Boolean {
             val primaryKey = track.filePath.takeIf { it.isNotBlank() }?.let { path ->
                 runCatching { File(path).canonicalPath }.getOrDefault(path)
             } ?: track.contentUri ?: track.id
 
-            val fingerprint = "${track.title.lowercase(Locale.ROOT)}|${track.fileSizeBytes}"
+            val fileName = track.filePath.takeIf { it.isNotBlank() }?.let { File(it).name } ?: track.title
+            val fingerprint = "${fileName.lowercase(Locale.ROOT)}|${track.fileSizeBytes}"
             val isDuplicateFingerprint = track.fileSizeBytes > 0L && !seenFingerprints.add(fingerprint)
             if (seenKeys.add(primaryKey) && !isDuplicateFingerprint) {
                 tracks.add(track)
+                emitProgress(stage, track.title, force = tracks.size <= 5)
+                return true
             }
+            return false
         }
 
-        // Ask MediaScanner to index Download & Music folders asynchronously if needed
+        emitProgress("Đang quét MediaStore trên máy...", null, force = true)
         triggerMediaScanForCommonDirs()
 
         // 1. Scan Android MediaStore.Audio (ALL audio, without IS_MUSIC != 0 restriction)
         try {
-            scanMediaStoreAudio().forEach(::tryAddTrack)
+            scanMediaStoreAudio { track ->
+                tryAddTrack(track, "Đang quét kho nhạc MediaStore...")
+            }
         } catch (e: Exception) {
             Log.e("PhoneMusicScanner", "MediaStore Audio query error", e)
         }
+        emitProgress("Đang quét mục Download & Tệp âm thanh...", tracks.lastOrNull()?.title, force = true)
 
-        // 2. Scan MediaStore.Downloads & MediaStore.Files for audio in Download/ that isn't marked IS_MUSIC
+        // 2. Scan MediaStore.Downloads & MediaStore.Files with fast SQL filter
         try {
-            scanMediaStoreDownloadsAndFiles().forEach(::tryAddTrack)
+            scanMediaStoreDownloadsAndFiles { track ->
+                tryAddTrack(track, "Đang quét MediaStore Download...")
+            }
         } catch (e: Exception) {
             Log.e("PhoneMusicScanner", "MediaStore Downloads/Files query error", e)
         }
 
-        // 3. Scan standard public directories (Download, Downloads, Music, Root)
-        val candidateDirs = linkedSetOf<File>()
+        // 3. Scan targeted public folders (Download, Downloads, Music, Documents, Zalo, Telegram)
+        val candidateDirs = linkedSetOf<Pair<String, File>>()
         try {
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.let { candidateDirs.add(it) }
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)?.let { candidateDirs.add(it) }
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.let {
+                candidateDirs.add("Đang quét thư mục Download..." to it)
+            }
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)?.let {
+                candidateDirs.add("Đang quét thư mục Music..." to it)
+            }
             Environment.getExternalStorageDirectory()?.let { root ->
-                candidateDirs.add(File(root, "Download"))
-                candidateDirs.add(File(root, "Downloads"))
-                candidateDirs.add(File(root, "Music"))
-                candidateDirs.add(root)
+                candidateDirs.add("Đang quét thư mục Download..." to File(root, "Download"))
+                candidateDirs.add("Đang quét thư mục Downloads..." to File(root, "Downloads"))
+                candidateDirs.add("Đang quét thư mục Music..." to File(root, "Music"))
+                candidateDirs.add("Đang quét thư mục Documents..." to File(root, "Documents"))
+                candidateDirs.add("Đang quét thư mục Recordings..." to File(root, "Recordings"))
+                candidateDirs.add("Đang quét thư mục Podcasts..." to File(root, "Podcasts"))
+                candidateDirs.add("Đang quét thư mục Audiobooks..." to File(root, "Audiobooks"))
+                candidateDirs.add("Đang quét thư mục Zalo..." to File(root, "Zalo"))
+                candidateDirs.add("Đang quét thư mục Telegram..." to File(root, "Telegram"))
             }
         } catch (e: Exception) {
             Log.e("PhoneMusicScanner", "Storage roots error", e)
         }
 
         val visitedDirs = mutableSetOf<String>()
-        for (dir in candidateDirs) {
+        for ((stageLabel, dir) in candidateDirs) {
             val canonical = runCatching { dir.canonicalPath }.getOrDefault(dir.absolutePath)
             if (visitedDirs.add(canonical) && dir.exists() && dir.canRead()) {
-                val fileTracks = mutableListOf<MobileAudioTrack>()
+                emitProgress(stageLabel, tracks.lastOrNull()?.title, force = true)
                 val dirKeys = mutableSetOf<String>()
-                scanDirectoryRecursively(dir, fileTracks, dirKeys, maxDepth = 5)
-                fileTracks.forEach(::tryAddTrack)
+                scanDirectoryRecursively(dir, dirKeys, maxDepth = 5) { found ->
+                    tryAddTrack(found, stageLabel)
+                }
             }
         }
 
         // 4. Scan SAF folders picked manually by the user
         extraTreeUris.forEach { treeUri ->
+            emitProgress("Đang quét thư mục đã chọn...", tracks.lastOrNull()?.title, force = true)
             try {
-                val safTracks = mutableListOf<MobileAudioTrack>()
                 val safKeys = mutableSetOf<String>()
-                scanDocumentTree(treeUri, safTracks, safKeys)
-                safTracks.forEach(::tryAddTrack)
+                scanDocumentTree(treeUri, safKeys) { found ->
+                    tryAddTrack(found, "Đang quét thư mục đã chọn...")
+                }
             } catch (e: Exception) {
                 Log.e("PhoneMusicScanner", "SAF tree scan error for $treeUri", e)
             }
         }
 
-        // 5. Scan individual SAF files picked manually (useful when Android 11+ blocks root Download tree)
-        extraFileUris.forEach { fileUri ->
-            try {
-                parsePickedFileUri(fileUri)?.let(::tryAddTrack)
-            } catch (e: Exception) {
-                Log.e("PhoneMusicScanner", "SAF file scan error for $fileUri", e)
+        // 5. Scan individual SAF files picked manually (Download / any folder)
+        if (extraFileUris.isNotEmpty()) {
+            emitProgress("Đang nạp file nhạc đã chọn...", tracks.lastOrNull()?.title, force = true)
+            extraFileUris.forEach { fileUri ->
+                try {
+                    parsePickedFileUri(fileUri)?.let { found ->
+                        tryAddTrack(found, "Đang nạp file nhạc đã chọn...")
+                    }
+                } catch (e: Exception) {
+                    Log.e("PhoneMusicScanner", "SAF file scan error for $fileUri", e)
+                }
             }
         }
 
-        tracks.sortedBy { it.title.lowercase(Locale.ROOT) }
+        val finalList = tracks.sortedBy { it.title.lowercase(Locale.ROOT) }
+        onProgress?.invoke(
+            MobileScanProgress(
+                tracks = finalList,
+                stageLabel = "Quét hoàn tất",
+                foundCount = finalList.size,
+                latestTrackTitle = null
+            )
+        )
+        finalList
     }
 
     private fun triggerMediaScanForCommonDirs() {
@@ -139,8 +198,7 @@ class PhoneMusicScanner(private val context: Context) {
         }
     }
 
-    private fun scanMediaStoreAudio(): List<MobileAudioTrack> {
-        val tracks = mutableListOf<MobileAudioTrack>()
+    private fun scanMediaStoreAudio(onTrackFound: (MobileAudioTrack) -> Unit) {
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
         } else {
@@ -163,10 +221,9 @@ class PhoneMusicScanner(private val context: Context) {
             projectionList.add(MediaStore.MediaColumns.RELATIVE_PATH)
         }
 
-        // Query ALL audio rows (do NOT restrict by IS_MUSIC != 0, since Download/ files often have IS_MUSIC = 0)
         context.contentResolver.query(collection, projectionList.toTypedArray(), null, null, null)?.use { cursor ->
             val idCol = cursor.getColumnIndex(MediaStore.Audio.Media._ID)
-            if (idCol < 0) return tracks
+            if (idCol < 0) return
             val titleCol = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE)
             val displayNameCol = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
             val artistCol = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST)
@@ -197,7 +254,6 @@ class PhoneMusicScanner(private val context: Context) {
                 val mime = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "" else ""
                 val albumId = if (albumIdCol >= 0) cursor.getLong(albumIdCol) else -1L
 
-                // Skip tiny OS notification/ringtone clips in system folders
                 val combinedPath = "$path $relPath".lowercase(Locale.ROOT)
                 val isSystemTone = (combinedPath.contains("/ringtones") ||
                     combinedPath.contains("/notifications") ||
@@ -214,9 +270,9 @@ class PhoneMusicScanner(private val context: Context) {
                     val format = determineFormat(ext, mime)
                     val contentUri = ContentUris.withAppendedId(collection, id).toString()
                     val parent = file?.parent ?: relPath.trimEnd('/')
-                    val albumArt = resolveMediaStoreOrFolderArt(albumId, file, contentUri)
+                    val albumArt = fastResolveMediaStoreOrFolderArt(albumId, file, contentUri)
 
-                    tracks.add(
+                    onTrackFound(
                         MobileAudioTrack(
                             id = "ms_$id",
                             title = title,
@@ -235,18 +291,23 @@ class PhoneMusicScanner(private val context: Context) {
                 }
             }
         }
-        return tracks
     }
 
-    private fun scanMediaStoreDownloadsAndFiles(): List<MobileAudioTrack> {
-        val tracks = mutableListOf<MobileAudioTrack>()
-        val urisToQuery = mutableListOf<Uri>()
+    private fun scanMediaStoreDownloadsAndFiles(onTrackFound: (MobileAudioTrack) -> Unit) {
+        val urisToQuery = mutableListOf<Pair<Uri, String?>>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            urisToQuery.add(MediaStore.Downloads.EXTERNAL_CONTENT_URI)
+            urisToQuery.add(MediaStore.Downloads.EXTERNAL_CONTENT_URI to null)
         }
-        urisToQuery.add(MediaStore.Files.getContentUri("external"))
+        val audioSelection = buildString {
+            append("${MediaStore.Files.FileColumns.MEDIA_TYPE}=${MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO}")
+            append(" OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'audio/%'")
+            supportedExtensions.forEach { ext ->
+                append(" OR ${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.$ext'")
+            }
+        }
+        urisToQuery.add(MediaStore.Files.getContentUri("external") to audioSelection)
 
-        for (collection in urisToQuery) {
+        for ((collection, selection) in urisToQuery) {
             try {
                 val projectionList = mutableListOf(
                     MediaStore.Files.FileColumns._ID,
@@ -260,25 +321,35 @@ class PhoneMusicScanner(private val context: Context) {
                     projectionList.add(MediaStore.MediaColumns.RELATIVE_PATH)
                 }
 
-                context.contentResolver.query(collection, projectionList.toTypedArray(), null, null, null)?.use { cursor ->
-                    val idCol = cursor.getColumnIndex(MediaStore.Files.FileColumns._ID)
+                val cursor = try {
+                    context.contentResolver.query(collection, projectionList.toTypedArray(), selection, null, null)
+                } catch (e: Exception) {
+                    // Fallback simpler selection if OEM SQLite rejects DISPLAY_NAME filter
+                    val fallbackSel = if (selection != null) {
+                        "${MediaStore.Files.FileColumns.MEDIA_TYPE}=${MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO} OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'audio/%'"
+                    } else null
+                    context.contentResolver.query(collection, projectionList.toTypedArray(), fallbackSel, null, null)
+                }
+
+                cursor?.use { c ->
+                    val idCol = c.getColumnIndex(MediaStore.Files.FileColumns._ID)
                     if (idCol < 0) return@use
-                    val nameCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
-                    val titleCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.TITLE)
-                    val dataCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA)
-                    val sizeCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.SIZE)
-                    val mimeCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.MIME_TYPE)
+                    val nameCol = c.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
+                    val titleCol = c.getColumnIndex(MediaStore.Files.FileColumns.TITLE)
+                    val dataCol = c.getColumnIndex(MediaStore.Files.FileColumns.DATA)
+                    val sizeCol = c.getColumnIndex(MediaStore.Files.FileColumns.SIZE)
+                    val mimeCol = c.getColumnIndex(MediaStore.Files.FileColumns.MIME_TYPE)
                     val relCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                        c.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
                     } else -1
 
-                    while (cursor.moveToNext()) {
-                        val id = cursor.getLong(idCol)
-                        val name = if (nameCol >= 0) cursor.getString(nameCol) ?: "" else ""
-                        val path = if (dataCol >= 0) cursor.getString(dataCol) ?: "" else ""
-                        val mime = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "" else ""
-                        val size = if (sizeCol >= 0) cursor.getLong(sizeCol) else 0L
-                        val relPath = if (relCol >= 0) cursor.getString(relCol) ?: "" else ""
+                    while (c.moveToNext()) {
+                        val id = c.getLong(idCol)
+                        val name = if (nameCol >= 0) c.getString(nameCol) ?: "" else ""
+                        val path = if (dataCol >= 0) c.getString(dataCol) ?: "" else ""
+                        val mime = if (mimeCol >= 0) c.getString(mimeCol) ?: "" else ""
+                        val size = if (sizeCol >= 0) c.getLong(sizeCol) else 0L
+                        val relPath = if (relCol >= 0) c.getString(relCol) ?: "" else ""
 
                         val extFromName = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
                         val extFromPath = path.substringAfterLast('.', "").lowercase(Locale.ROOT)
@@ -288,7 +359,7 @@ class PhoneMusicScanner(private val context: Context) {
 
                         val contentUri = ContentUris.withAppendedId(collection, id).toString()
                         val file = if (path.isNotBlank()) File(path) else null
-                        val rawTitle = if (titleCol >= 0) cursor.getString(titleCol) else null
+                        val rawTitle = if (titleCol >= 0) c.getString(titleCol) else null
                         val title = rawTitle?.takeIf { it.isNotBlank() }
                             ?: name.substringBeforeLast('.').takeIf { it.isNotBlank() }
                             ?: file?.nameWithoutExtension
@@ -297,7 +368,7 @@ class PhoneMusicScanner(private val context: Context) {
                         val folderLabel = file?.parentFile?.name
                             ?: relPath.trimEnd('/').substringAfterLast('/').ifBlank { "Download" }
 
-                        tracks.add(
+                        onTrackFound(
                             MobileAudioTrack(
                                 id = "dl_${collection.hashCode()}_$id",
                                 title = title,
@@ -318,26 +389,25 @@ class PhoneMusicScanner(private val context: Context) {
             } catch (ignored: Exception) {
             }
         }
-        return tracks
     }
 
     private fun scanDirectoryRecursively(
         dir: File,
-        outTracks: MutableList<MobileAudioTrack>,
         seenKeys: MutableSet<String>,
         maxDepth: Int,
-        currentDepth: Int = 0
+        currentDepth: Int = 0,
+        onTrackFound: (MobileAudioTrack) -> Unit
     ) {
         if (currentDepth > maxDepth || !dir.canRead()) return
         val files = dir.listFiles() ?: return
 
         for (file in files) {
             if (file.isDirectory && !file.name.startsWith(".") && !file.name.equals("Android", ignoreCase = true)) {
-                scanDirectoryRecursively(file, outTracks, seenKeys, maxDepth, currentDepth + 1)
+                scanDirectoryRecursively(file, seenKeys, maxDepth, currentDepth + 1, onTrackFound)
             } else if (file.isFile) {
                 val ext = file.extension.lowercase(Locale.ROOT)
                 if (supportedExtensions.contains(ext) && seenKeys.add(file.absolutePath)) {
-                    outTracks.add(parseFileTrackMetadata(file, ext))
+                    onTrackFound(parseFileTrackMetadata(file, ext))
                 }
             }
         }
@@ -345,26 +415,26 @@ class PhoneMusicScanner(private val context: Context) {
 
     private fun scanDocumentTree(
         treeUri: Uri,
-        outTracks: MutableList<MobileAudioTrack>,
-        seenKeys: MutableSet<String>
+        seenKeys: MutableSet<String>,
+        onTrackFound: (MobileAudioTrack) -> Unit
     ) {
         val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
         if (rootDocId.startsWith("raw:")) {
             val rawDir = File(rootDocId.removePrefix("raw:"))
             if (rawDir.exists() && rawDir.isDirectory && rawDir.canRead()) {
-                scanDirectoryRecursively(rawDir, outTracks, seenKeys, maxDepth = 5)
+                scanDirectoryRecursively(rawDir, seenKeys, maxDepth = 5, onTrackFound = onTrackFound)
             }
         }
-        scanDocumentFolder(treeUri, rootDocId, outTracks, seenKeys, depth = 0, maxDepth = 5)
+        scanDocumentFolder(treeUri, rootDocId, seenKeys, depth = 0, maxDepth = 5, onTrackFound = onTrackFound)
     }
 
     private fun scanDocumentFolder(
         treeUri: Uri,
         parentDocId: String,
-        outTracks: MutableList<MobileAudioTrack>,
         seenKeys: MutableSet<String>,
         depth: Int,
-        maxDepth: Int
+        maxDepth: Int,
+        onTrackFound: (MobileAudioTrack) -> Unit
     ) {
         if (depth > maxDepth) return
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
@@ -390,7 +460,7 @@ class PhoneMusicScanner(private val context: Context) {
 
                 if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                     if (!name.startsWith(".")) {
-                        scanDocumentFolder(treeUri, docId, outTracks, seenKeys, depth + 1, maxDepth)
+                        scanDocumentFolder(treeUri, docId, seenKeys, depth + 1, maxDepth, onTrackFound)
                     }
                 } else {
                     val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
@@ -398,7 +468,7 @@ class PhoneMusicScanner(private val context: Context) {
                         val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
                         val uriStr = docUri.toString()
                         if (seenKeys.add(uriStr)) {
-                            outTracks.add(parseSafTrackMetadata(docUri, name, ext, mime, size))
+                            onTrackFound(parseSafTrackMetadata(docUri, name, ext, mime, size))
                         }
                     }
                 }
@@ -528,7 +598,13 @@ class PhoneMusicScanner(private val context: Context) {
         )
     }
 
-    private fun resolveMediaStoreOrFolderArt(albumId: Long, file: File?, contentUri: String): String? {
+    private fun fastResolveMediaStoreOrFolderArt(albumId: Long, file: File?, contentUri: String): String? {
+        val cacheKey = file?.absolutePath ?: contentUri
+        val cacheFile = File(getAlbumArtCacheDir(), "${cacheKey.hashCode()}.jpg")
+        if (cacheFile.exists() && cacheFile.length() > 0L) {
+            return cacheFile.absolutePath
+        }
+
         if (albumId > 0) {
             val artUri = ContentUris.withAppendedId(
                 Uri.parse("content://media/external/audio/albumart"),
@@ -540,28 +616,6 @@ class PhoneMusicScanner(private val context: Context) {
                 }
             } catch (ignored: Exception) {
             }
-        }
-
-        val cacheKey = file?.absolutePath ?: contentUri
-        val cacheFile = File(getAlbumArtCacheDir(), "${cacheKey.hashCode()}.jpg")
-        if (cacheFile.exists() && cacheFile.length() > 0L) {
-            return cacheFile.absolutePath
-        }
-
-        val retriever = MediaMetadataRetriever()
-        try {
-            if (file != null && file.exists() && file.canRead()) {
-                retriever.setDataSource(file.absolutePath)
-            } else {
-                retriever.setDataSource(context, Uri.parse(contentUri))
-            }
-            val embedded = cacheEmbeddedPicture(cacheKey, retriever.embeddedPicture)
-            if (embedded != null) return embedded
-        } catch (ignored: Exception) {
-        } finally {
-            try {
-                retriever.release()
-            } catch (ignored: Exception) {}
         }
 
         return findFolderCoverArt(file?.parentFile)

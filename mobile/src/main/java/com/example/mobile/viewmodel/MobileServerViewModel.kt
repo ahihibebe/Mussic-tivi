@@ -36,6 +36,10 @@ data class MobileServerUiState(
     val filteredTracks: List<MobileAudioTrack> = emptyList(),
     val searchQuery: String = "",
     val isScanning: Boolean = false,
+    val scanStageText: String = "",
+    val scanNewCount: Int = 0,
+    val scanLatestTitle: String? = null,
+    val lastScanSummary: String? = null,
     val isServerRunning: Boolean = false,
     val serverUrl: String? = null,
     val qrBitmap: ImageBitmap? = null,
@@ -58,6 +62,10 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
     private val _tracks = MutableStateFlow<List<MobileAudioTrack>>(emptyList())
     private val _searchQuery = MutableStateFlow("")
     private val _isScanning = MutableStateFlow(false)
+    private val _scanStageText = MutableStateFlow("")
+    private val _scanNewCount = MutableStateFlow(0)
+    private val _scanLatestTitle = MutableStateFlow<String?>(null)
+    private val _lastScanSummary = MutableStateFlow<String?>(null)
     private val _isServerRunning = MutableStateFlow(false)
     private val _serverUrl = MutableStateFlow<String?>(null)
     private val _qrBitmap = MutableStateFlow<ImageBitmap?>(null)
@@ -75,10 +83,28 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
         onClientStreamed = { logMsg -> appendActivityLog(logMsg) }
     )
 
+    private data class ScanVisualMeta(
+        val isScanning: Boolean,
+        val stageText: String,
+        val newCount: Int,
+        val latestTitle: String?,
+        val summary: String?
+    )
+
+    private val scanMetaFlow = combine(
+        _isScanning,
+        _scanStageText,
+        _scanNewCount,
+        _scanLatestTitle,
+        _lastScanSummary
+    ) { scanning, stage, newCount, latest, summary ->
+        ScanVisualMeta(scanning, stage, newCount, latest, summary)
+    }
+
     val uiState: StateFlow<MobileServerUiState> = combine(
         _tracks,
         _searchQuery,
-        _isScanning,
+        scanMetaFlow,
         _isServerRunning,
         _serverUrl,
         _qrBitmap,
@@ -92,7 +118,7 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
         @Suppress("UNCHECKED_CAST")
         val tracks = values[0] as List<MobileAudioTrack>
         val query = values[1] as String
-        val isScanning = values[2] as Boolean
+        val scanMeta = values[2] as ScanVisualMeta
         val isRunning = values[3] as Boolean
         val serverUrl = values[4] as String?
         val qrBitmap = values[5] as ImageBitmap?
@@ -120,7 +146,11 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
             tracks = tracks,
             filteredTracks = filtered,
             searchQuery = query,
-            isScanning = isScanning,
+            isScanning = scanMeta.isScanning,
+            scanStageText = scanMeta.stageText,
+            scanNewCount = scanMeta.newCount,
+            scanLatestTitle = scanMeta.latestTitle,
+            lastScanSummary = scanMeta.summary,
             isServerRunning = isRunning,
             serverUrl = serverUrl,
             qrBitmap = qrBitmap,
@@ -162,19 +192,41 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
     fun scanMusic() {
         if (_isScanning.value) return
         viewModelScope.launch {
+            val previousIds = _tracks.value.map { it.id }.toSet()
             _isScanning.value = true
+            _scanStageText.value = "Đang khởi tạo quét kho nhạc..."
+            _scanNewCount.value = 0
+            _scanLatestTitle.value = null
+            _lastScanSummary.value = null
+
             try {
                 val treeUris = loadSavedTreeUris()
                 val fileUris = loadSavedFileUris()
                 _savedFolderCount.value = treeUris.size + fileUris.size
                 val scanned = scanner.scanAll(
                     extraTreeUris = treeUris,
-                    extraFileUris = fileUris
+                    extraFileUris = fileUris,
+                    onProgress = { progress ->
+                        _tracks.value = progress.tracks
+                        _scanStageText.value = progress.stageLabel
+                        val newlyAdded = progress.tracks.count { !previousIds.contains(it.id) }
+                        _scanNewCount.value = newlyAdded
+                        progress.latestTrackTitle?.let { _scanLatestTitle.value = it }
+                    }
                 )
                 _tracks.value = scanned
-                appendActivityLog("Đã quét thấy ${scanned.size} bài hát trên điện thoại")
+                val newlyAdded = scanned.count { !previousIds.contains(it.id) }
+                _scanNewCount.value = newlyAdded
+                val summary = if (newlyAdded > 0 && previousIds.isNotEmpty()) {
+                    "Quét xong: ${scanned.size} bài hát (+$newlyAdded bài mới)"
+                } else {
+                    "Quét xong: tìm thấy ${scanned.size} bài hát trên máy"
+                }
+                _lastScanSummary.value = summary
+                appendActivityLog(summary)
             } finally {
                 _isScanning.value = false
+                _scanLatestTitle.value = null
             }
         }
     }
