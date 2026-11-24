@@ -64,18 +64,25 @@ jobs:
       - name: Prepare Release APK
         run: |
           mkdir -p release-apk
-          APK_FILE=$(find "${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug" -name "*.apk" | head -n 1)
-          if [ -z "$APK_FILE" ]; then
-            echo "❌ Không tìm thấy file APK sau khi build!"
+          TV_APK_FILE=$(find "${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug" -name "*.apk" | head -n 1)
+          if [ -z "$TV_APK_FILE" ]; then
+            echo "❌ Không tìm thấy file APK bản TV Music sau khi build!"
             exit 1
           fi
-          cp "$APK_FILE" "release-apk/TV-Music-v1.0.${{ github.run_number }}.apk"
+          cp "$TV_APK_FILE" "release-apk/TV-Music-v1.0.${{ github.run_number }}.apk"
+
+          MOBILE_APK_FILE=$(find "${{ env.PROJECT_DIR }}/mobile/build/outputs/apk/debug" -name "*.apk" | head -n 1)
+          if [ -z "$MOBILE_APK_FILE" ]; then
+            echo "❌ Không tìm thấy file APK bản Mobile Server WiFi sau khi build!"
+            exit 1
+          fi
+          cp "$MOBILE_APK_FILE" "release-apk/Mobile-Server-WiFi-v1.0.${{ github.run_number }}.apk"
           ls -lh release-apk/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
+          name: tv-music-and-mobile-server-apks
           path: "release-apk/*.apk"
           if-no-files-found: error
 
@@ -84,10 +91,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "v1.0.${{ github.run_number }}"
-          name: "TV Music v1.0.${{ github.run_number }}"
+          name: "TV Music & Mobile Server WiFi v1.0.${{ github.run_number }}"
           body: |
-            Bản build tự động TV Music APK (`v1.0.${{ github.run_number }}`).
-            Tải file `.apk` bên dưới để cài đặt trực tiếp lên Android TV hoặc điện thoại Android.
+            Bản build tự động (`v1.0.${{ github.run_number }}`) gồm 2 file APK cài đặt song song:
+            - **TV-Music-v1.0.${{ github.run_number }}.apk**: Cài lên **Android TV** (hoặc điện thoại làm đầu phát).
+            - **Mobile-Server-WiFi-v1.0.${{ github.run_number }}.apk**: Cài lên **điện thoại** để chọn **"Đặt máy này làm Server nhạc"**, Tivi quét và phát trực tiếp qua Wi-Fi không cần chép file.
           files: "release-apk/*.apk"
           make_latest: true
         env:

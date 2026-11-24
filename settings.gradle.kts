@@ -25,3 +25,4 @@ dependencyResolutionManagement {
 rootProject.name = "TV Music"
 
 include(":app")
+include(":mobile")
