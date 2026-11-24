@@ -12,15 +12,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -42,10 +47,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,6 +60,7 @@ import com.example.R
 import com.example.ui.components.tvFocusable
 import com.example.ui.theme.LocalTvStyle
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun InfoScreen(
     modifier: Modifier = Modifier
@@ -78,8 +86,8 @@ fun InfoScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(start = 28.dp, end = 28.dp, top = 20.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+            .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         // Header
         Column {
@@ -96,27 +104,23 @@ fun InfoScreen(
             )
         }
 
-        // Main Two-Column Content
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(22.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            // Left Column: Facebook + Donate Bim Bim
-            Column(
-                modifier = Modifier.weight(1.1f),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                // Facebook Card
+        // Responsive layout: 2 columns when wide, stacked vertically when narrow
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val isWideLayout = maxWidth >= 600.dp
+
+            val facebookCard: @Composable (Modifier) -> Unit = { cardMod ->
                 Column(
-                    modifier = Modifier
+                    modifier = cardMod
                         .fillMaxWidth()
                         .clip(cardShape)
                         .background(style.cardSurface)
                         .then(cardBorderModifier)
-                        .padding(20.dp)
+                        .padding(18.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(44.dp)
@@ -135,7 +139,7 @@ fun InfoScreen(
 
                         Spacer(modifier = Modifier.width(12.dp))
 
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Liên hệ / Facebook",
                                 color = style.textSecondary,
@@ -145,15 +149,19 @@ fun InfoScreen(
                             Text(
                                 text = "Facebook.com/truongalone",
                                 color = style.textPrimary,
-                                fontSize = 18.sp,
+                                fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                         Row(
                             modifier = Modifier
                                 .tvFocusable(
@@ -217,35 +225,39 @@ fun InfoScreen(
                         }
                     }
                 }
+            }
 
-                // Donate Bim Bim Card
+            val donateCard: @Composable (Modifier) -> Unit = { cardMod ->
                 Column(
-                    modifier = Modifier
+                    modifier = cardMod
                         .fillMaxWidth()
                         .clip(cardShape)
                         .background(style.cardSurface)
                         .then(cardBorderModifier)
-                        .padding(20.dp)
+                        .padding(18.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
-                                .size(52.dp)
+                                .size(50.dp)
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(style.amberBg)
                                 .border(1.dp, style.amberBorder, RoundedCornerShape(14.dp)),
                             contentAlignment = Alignment.Center
                         ) {
-                            BimBimSnackIcon(size = 36.dp)
+                            BimBimSnackIcon(size = 34.dp)
                         }
 
                         Spacer(modifier = Modifier.width(14.dp))
 
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Donate gói bim bim",
                                 color = style.textPrimary,
-                                fontSize = 19.sp,
+                                fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
@@ -256,73 +268,35 @@ fun InfoScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Bank Account Pill
+                    // Bank Account Box (sharp corners as requested)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(style.surfaceVariant)
-                            .border(1.dp, style.borderColor, RoundedCornerShape(12.dp))
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .background(style.surfaceVariant, RectangleShape)
+                            .border(1.dp, style.borderColor, RectangleShape)
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.AccountBalance,
-                                contentDescription = "MB Bank",
-                                tint = style.accentColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "Ngân hàng MB Bank",
-                                    color = style.textSecondary,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "MB : STK 220011026789",
-                                    color = style.textPrimary,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .tvFocusable(
-                                    tag = "info_btn_copy_stk",
-                                    shape = RoundedCornerShape(10.dp),
-                                    defaultBgColor = style.amberBg,
-                                    defaultBorderColor = style.amberBorder,
-                                    onClick = {
-                                        copyToClipboard(
-                                            context = context,
-                                            label = "STK MB Bank",
-                                            value = "220011026789",
-                                            toastMessage = "Đã sao chép STK: 220011026789"
-                                        )
-                                    }
-                                )
-                                .padding(horizontal = 14.dp, vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = "Sao chép STK",
-                                tint = style.amberColor,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Default.AccountBalance,
+                            contentDescription = "MB Bank",
+                            tint = style.accentColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Sao chép STK",
-                                color = style.amberColor,
+                                text = "Ngân hàng MB Bank",
+                                color = style.textSecondary,
                                 fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "MB : STK 220011026789",
+                                color = style.textPrimary,
+                                fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -330,79 +304,111 @@ fun InfoScreen(
                 }
             }
 
-            // Right Column: QR Code Image Card
-            Column(
-                modifier = Modifier
-                    .weight(0.85f)
-                    .clip(cardShape)
-                    .background(style.cardSurface)
-                    .then(cardBorderModifier)
-                    .padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            val qrCard: @Composable (Modifier) -> Unit = { cardMod ->
+                Column(
+                    modifier = cardMod
+                        .fillMaxWidth()
+                        .clip(cardShape)
+                        .background(style.cardSurface)
+                        .then(cardBorderModifier)
+                        .padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.QrCodeScanner,
+                            contentDescription = null,
+                            tint = style.emeraldColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Mã QR Ủng Hộ",
+                            color = style.textPrimary,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Responsive square QR container that never overflows card bounds
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .widthIn(max = 220.dp)
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color.White)
+                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(14.dp))
+                            .padding(10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.qr_donate_mb),
+                            contentDescription = "Mã QR MB Bank STK 220011026789",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .background(style.emeraldBg, RectangleShape)
+                            .border(1.dp, style.emeraldBorder, RectangleShape)
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "MB Bank • 220011026789",
+                            color = style.emeraldColor,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Quét mã bằng ứng dụng ngân hàng trên điện thoại",
+                        color = style.textSecondary,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            if (isWideLayout) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCodeScanner,
-                        contentDescription = null,
-                        tint = style.emeraldColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Mã QR Ủng Hộ",
-                        color = style.textPrimary,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column(
+                        modifier = Modifier.weight(1.15f),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        facebookCard(Modifier)
+                        donateCard(Modifier)
+                    }
+
+                    Box(modifier = Modifier.weight(0.85f)) {
+                        qrCard(Modifier)
+                    }
                 }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Pure white QR container for reliable scanning on TV screen
-                Box(
-                    modifier = Modifier
-                        .size(250.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.White)
-                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
-                        .padding(10.dp),
-                    contentAlignment = Alignment.Center
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.qr_donate_mb),
-                        contentDescription = "Mã QR MB Bank STK 220011026789",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    facebookCard(Modifier)
+                    donateCard(Modifier)
+                    qrCard(Modifier)
                 }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(style.emeraldBg)
-                        .border(1.dp, style.emeraldBorder, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "MB Bank • 220011026789",
-                        color = style.emeraldColor,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Quét mã bằng ứng dụng ngân hàng trên điện thoại",
-                    color = style.textSecondary,
-                    fontSize = 12.sp
-                )
             }
         }
     }
@@ -423,7 +429,6 @@ private fun BimBimSnackIcon(
         val bagWidth = bagRight - bagLeft
         val bagHeight = bagBottom - bagTop
 
-        // Top crimped foil seal
         val topSealPath = Path().apply {
             moveTo(bagLeft - w * 0.04f, bagTop)
             val teeth = 6
@@ -437,7 +442,6 @@ private fun BimBimSnackIcon(
         }
         drawPath(topSealPath, color = Color(0xFFDC2626))
 
-        // Bottom crimped foil seal
         val bottomSealPath = Path().apply {
             moveTo(bagLeft - w * 0.04f, bagBottom)
             val teeth = 6
@@ -451,7 +455,6 @@ private fun BimBimSnackIcon(
         }
         drawPath(bottomSealPath, color = Color(0xFFDC2626))
 
-        // Main snack bag body
         drawRoundRect(
             brush = Brush.linearGradient(
                 colors = listOf(Color(0xFFEF4444), Color(0xFFEA580C)),
@@ -463,7 +466,6 @@ private fun BimBimSnackIcon(
             cornerRadius = CornerRadius(w * 0.10f, w * 0.10f)
         )
 
-        // Golden label stripe across the snack pack
         drawRoundRect(
             color = Color(0xFFFDE047),
             topLeft = Offset(bagLeft + bagWidth * 0.08f, bagTop + bagHeight * 0.25f),
@@ -471,7 +473,6 @@ private fun BimBimSnackIcon(
             cornerRadius = CornerRadius(w * 0.08f, w * 0.08f)
         )
 
-        // Crunchy snack chip illustration in center
         drawCircle(
             color = Color(0xFFF59E0B),
             radius = bagWidth * 0.22f,
@@ -483,7 +484,6 @@ private fun BimBimSnackIcon(
             center = Offset(w * 0.47f, h * 0.47f)
         )
 
-        // Glossy foil reflection
         drawRoundRect(
             color = Color.White.copy(alpha = 0.28f),
             topLeft = Offset(bagLeft + bagWidth * 0.10f, bagTop + bagHeight * 0.08f),

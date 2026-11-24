@@ -14,7 +14,6 @@ data class AudioTrack(
     val fileSizeBytes: Long = 0L,
     val parentDirectory: String = "",
     val isFavorite: Boolean = false,
-    val isDemo: Boolean = false,
     val albumArtUri: String? = null
 ) {
     val formattedDuration: String

@@ -249,7 +249,6 @@ private fun FolderCard(
     onOpen: () -> Unit
 ) {
     val style = LocalTvStyle.current
-    val isDemoFolder = folder.name.contains("Demo", ignoreCase = true)
 
     Row(
         modifier = Modifier
@@ -267,12 +266,10 @@ private fun FolderCard(
             modifier = Modifier
                 .size(48.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(
-                    if (isDemoFolder) style.amberBg else style.accentLightBg
-                )
+                .background(style.accentLightBg)
                 .border(
                     1.dp,
-                    if (isDemoFolder) style.amberBorder else style.accentLightBorder,
+                    style.accentLightBorder,
                     RoundedCornerShape(10.dp)
                 ),
             contentAlignment = Alignment.Center
@@ -280,7 +277,7 @@ private fun FolderCard(
             Icon(
                 imageVector = Icons.Default.Folder,
                 contentDescription = folder.name,
-                tint = if (isDemoFolder) style.amberColor else style.accentColor,
+                tint = style.accentColor,
                 modifier = Modifier.size(26.dp)
             )
         }
@@ -313,23 +310,6 @@ private fun FolderCard(
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
-                }
-
-                if (isDemoFolder) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(style.amberBg)
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = "FLAC/MP3",
-                            color = style.amberColor,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
                 }
             }
         }

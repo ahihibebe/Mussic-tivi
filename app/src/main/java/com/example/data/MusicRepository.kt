@@ -54,7 +54,7 @@ class MusicRepository(private val context: Context) {
     suspend fun refreshLibrary() = withContext(Dispatchers.IO) {
         _isScanning.value = true
         try {
-            val result = scanner.scanAll(includeDemo = true)
+            val result = scanner.scanAll()
             val favs = _favoriteIds.value
 
             val updatedTracks = result.tracks.map { track ->

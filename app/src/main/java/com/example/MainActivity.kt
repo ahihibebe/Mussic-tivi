@@ -17,6 +17,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -272,25 +273,29 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets.safeDrawing
         ) { innerPadding ->
-            Row(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                TvSidebar(
-                    selectedTab = currentTab,
-                    onTabSelected = { tab -> viewModel.selectTab(tab) },
-                    isPlaying = isPlaying,
-                    sleepTimerSeconds = sleepTimerSeconds,
-                    onToggleStyle = { viewModel.toggleUiStyle() },
-                    onOpenQrBackground = { viewModel.openQrBackgroundDialog() }
-                )
+                val isCompactViewport = maxWidth < 680.dp
 
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxSize()
-                ) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    TvSidebar(
+                        selectedTab = currentTab,
+                        onTabSelected = { tab -> viewModel.selectTab(tab) },
+                        isPlaying = isPlaying,
+                        sleepTimerSeconds = sleepTimerSeconds,
+                        onToggleStyle = { viewModel.toggleUiStyle() },
+                        onOpenQrBackground = { viewModel.openQrBackgroundDialog() },
+                        compact = isCompactViewport
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxSize()
+                    ) {
                     when (currentTab) {
                         TvNavTab.FOLDERS -> {
                             FolderBrowserScreen(
@@ -424,6 +429,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                 }
             }
         }
+    }
 
         // Layer 4: QR Code Background Transfer Dialog
         if (isQrDialogVisible) {

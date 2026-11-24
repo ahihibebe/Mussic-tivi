@@ -26,9 +26,17 @@ class StorageScanner(private val context: Context) {
         val folders: List<AudioFolder>
     )
 
-    suspend fun scanAll(includeDemo: Boolean = true): ScanResult = withContext(Dispatchers.IO) {
+    suspend fun scanAll(): ScanResult = withContext(Dispatchers.IO) {
         val tracksList = mutableListOf<AudioTrack>()
         val seenPaths = mutableSetOf<String>()
+
+        // Clean up any leftover demo_music files from earlier versions
+        try {
+            val legacyDemoDir = File(context.filesDir, "demo_music")
+            if (legacyDemoDir.exists()) {
+                legacyDemoDir.deleteRecursively()
+            }
+        } catch (ignored: Exception) {}
 
         // 1. Scan MediaStore if permission is available
         try {
@@ -69,21 +77,7 @@ class StorageScanner(private val context: Context) {
             }
         }
 
-        // 3. Include Demo Tracks so the TV app is immediately functional
-        if (includeDemo) {
-            try {
-                val demoTracks = com.example.audio.DemoAudioGenerator.getOrCreateDemoTracks(context)
-                for (demo in demoTracks) {
-                    if (seenPaths.add(demo.filePath)) {
-                        tracksList.add(demo)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("StorageScanner", "Error generating demo tracks", e)
-            }
-        }
-
-        // 4. Build Folders representation
+        // 3. Build Folders representation
         val folders = buildFolderHierarchy(tracksList)
 
         ScanResult(tracksList, folders)
@@ -160,8 +154,7 @@ class StorageScanner(private val context: Context) {
                                 format = format,
                                 bitrate = "320 kbps",
                                 fileSizeBytes = size,
-                                parentDirectory = parent,
-                                isDemo = false
+                                parentDirectory = parent
                             )
                         )
                     }
@@ -244,8 +237,7 @@ class StorageScanner(private val context: Context) {
             bitrate = bitrate,
             sampleRate = sampleRate,
             fileSizeBytes = file.length(),
-            parentDirectory = file.parent ?: "",
-            isDemo = false
+            parentDirectory = file.parent ?: ""
         )
     }
 
@@ -258,9 +250,7 @@ class StorageScanner(private val context: Context) {
 
         return folderMap.map { (path, trackList) ->
             val file = File(path)
-            val folderName = if (path.contains("demo_music")) {
-                "Nhạc mẫu chất lượng cao (Demo)"
-            } else if (file.name.isNotEmpty()) {
+            val folderName = if (file.name.isNotEmpty()) {
                 file.name
             } else {
                 path

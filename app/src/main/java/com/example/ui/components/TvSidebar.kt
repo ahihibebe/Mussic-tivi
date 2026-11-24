@@ -51,6 +51,7 @@ fun TvSidebar(
     sleepTimerSeconds: Int?,
     onToggleStyle: () -> Unit = {},
     onOpenQrBackground: () -> Unit = {},
+    compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val style = LocalTvStyle.current
@@ -73,28 +74,29 @@ fun TvSidebar(
         Modifier.border(width = 1.dp, color = style.borderColor)
     }
 
+    val sidebarWidth = if (compact) 76.dp else 256.dp
+
     Column(
         modifier = modifier
             .fillMaxHeight()
-            .width(264.dp)
+            .width(sidebarWidth)
             .clip(sidebarShape)
             .background(style.sidebarSurface)
             .then(sidebarBorderModifier)
             .verticalScroll(rememberScrollState())
-            .padding(vertical = 18.dp, horizontal = 16.dp),
-        horizontalAlignment = Alignment.Start,
+            .padding(
+                vertical = 18.dp,
+                horizontal = if (compact) 10.dp else 16.dp
+            ),
+        horizontalAlignment = if (compact) Alignment.CenterHorizontally else Alignment.Start,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = if (compact) Alignment.CenterHorizontally else Alignment.Start
         ) {
             // App Header
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 6.dp, vertical = 4.dp)
-            ) {
+            if (compact) {
                 Box(
                     modifier = Modifier
                         .size(46.dp)
@@ -111,32 +113,61 @@ fun TvSidebar(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Album,
-                        contentDescription = "Logo",
+                        contentDescription = "TV Music",
                         tint = if (style.isGlassStyle) style.accentColor else Color(0xFFFDE68A),
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (style.isGlassStyle) Color(0x40FFFFFF) else Color(0xFF1E293B)
+                            )
+                            .border(
+                                1.dp,
+                                if (style.isGlassStyle) style.glassSpecularTop else Color.Transparent,
+                                RoundedCornerShape(12.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Album,
+                            contentDescription = "Logo",
+                            tint = if (style.isGlassStyle) style.accentColor else Color(0xFFFDE68A),
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
 
-                Column {
-                    Text(
-                        text = "TV Music",
-                        color = style.textPrimary,
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.3.sp
-                    )
-                    Text(
-                        text = if (style.isGlassStyle) "Apple TV Glass" else "Trình phát thư mục TV",
-                        color = style.textSecondary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Column {
+                        Text(
+                            text = "TV Music",
+                            color = style.textPrimary,
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.3.sp
+                        )
+                        Text(
+                            text = if (style.isGlassStyle) "Apple TV Glass" else "Trình phát thư mục TV",
+                            color = style.textSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(22.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             // Navigation Items
             TvNavTab.values().forEach { tab ->
@@ -158,170 +189,239 @@ fun TvSidebar(
                     else -> style.textSecondary
                 }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 3.dp)
-                        .tvFocusable(
-                            tag = "nav_tab_${tab.name.lowercase()}",
-                            shape = RoundedCornerShape(12.dp),
-                            defaultBgColor = if (isSelected) style.selectedPillSurface else Color.Transparent,
-                            focusedBgColor = style.focusedSurface,
-                            defaultBorderColor = if (isSelected) style.selectedBorderColor else Color.Transparent,
-                            focusedBorderColor = style.focusedBorderColor,
-                            elevation = 0.dp,
-                            onClick = { onTabSelected(tab) }
+                if (compact) {
+                    Box(
+                        modifier = Modifier
+                            .padding(vertical = 4.dp)
+                            .size(48.dp)
+                            .tvFocusable(
+                                tag = "nav_tab_${tab.name.lowercase()}",
+                                shape = RoundedCornerShape(12.dp),
+                                defaultBgColor = if (isSelected) style.selectedPillSurface else Color.Transparent,
+                                focusedBgColor = style.focusedSurface,
+                                defaultBorderColor = if (isSelected) style.selectedBorderColor else Color.Transparent,
+                                focusedBorderColor = style.focusedBorderColor,
+                                elevation = 0.dp,
+                                onClick = { onTabSelected(tab) }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = tab.title,
+                            tint = iconColor,
+                            modifier = Modifier.size(24.dp)
                         )
-                        .padding(horizontal = 14.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = tab.title,
-                        tint = iconColor,
-                        modifier = Modifier.size(22.dp)
-                    )
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Text(
-                        text = tab.title,
-                        color = if (isSelected) {
-                            if (style.isGlassStyle) style.textPrimary else style.accentColor
-                        } else style.textPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    if (tab == TvNavTab.NOW_PLAYING && isPlaying) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(style.accentColor)
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                            .tvFocusable(
+                                tag = "nav_tab_${tab.name.lowercase()}",
+                                shape = RoundedCornerShape(12.dp),
+                                defaultBgColor = if (isSelected) style.selectedPillSurface else Color.Transparent,
+                                focusedBgColor = style.focusedSurface,
+                                defaultBorderColor = if (isSelected) style.selectedBorderColor else Color.Transparent,
+                                focusedBorderColor = style.focusedBorderColor,
+                                elevation = 0.dp,
+                                onClick = { onTabSelected(tab) }
+                            )
+                            .padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = tab.title,
+                            tint = iconColor,
+                            modifier = Modifier.size(22.dp)
                         )
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Text(
+                            text = tab.title,
+                            color = if (isSelected) {
+                                if (style.isGlassStyle) style.textPrimary else style.accentColor
+                            } else style.textPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        if (tab == TvNavTab.NOW_PLAYING && isPlaying) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(style.accentColor)
+                            )
+                        }
                     }
                 }
             }
         }
 
-        // Bottom Controls: Quick Style & QR Background + Sleep Timer / Format info
+        // Bottom Controls
         Column(
             modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = if (compact) Alignment.CenterHorizontally else Alignment.Start,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Quick Style Switcher
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .tvFocusable(
-                        tag = "sidebar_toggle_style",
-                        shape = RoundedCornerShape(12.dp),
-                        defaultBgColor = style.surfaceVariant,
-                        defaultBorderColor = style.borderColor,
-                        elevation = 0.dp,
-                        onClick = onToggleStyle
+            if (compact) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .tvFocusable(
+                            tag = "sidebar_toggle_style",
+                            shape = RoundedCornerShape(12.dp),
+                            defaultBgColor = style.surfaceVariant,
+                            defaultBorderColor = style.borderColor,
+                            elevation = 0.dp,
+                            onClick = onToggleStyle
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (style.isGlassStyle) Icons.Default.AutoAwesome else Icons.Default.WbSunny,
+                        contentDescription = "Chuyển giao diện",
+                        tint = style.accentColor,
+                        modifier = Modifier.size(20.dp)
                     )
-                    .padding(horizontal = 12.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = if (style.isGlassStyle) Icons.Default.AutoAwesome else Icons.Default.WbSunny,
-                    contentDescription = "Chuyển giao diện",
-                    tint = style.accentColor,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (style.isGlassStyle) "Style: Apple TV Kính" else "Style: Nền Trắng",
-                    color = style.textPrimary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+                }
 
-            // Quick QR Background Picker
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .tvFocusable(
-                        tag = "sidebar_qr_bg",
-                        shape = RoundedCornerShape(12.dp),
-                        defaultBgColor = style.surfaceVariant,
-                        defaultBorderColor = style.borderColor,
-                        elevation = 0.dp,
-                        onClick = onOpenQrBackground
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .tvFocusable(
+                            tag = "sidebar_qr_bg",
+                            shape = RoundedCornerShape(12.dp),
+                            defaultBgColor = style.surfaceVariant,
+                            defaultBorderColor = style.borderColor,
+                            elevation = 0.dp,
+                            onClick = onOpenQrBackground
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.QrCode2,
+                        contentDescription = "Ảnh nền QR",
+                        tint = style.emeraldColor,
+                        modifier = Modifier.size(20.dp)
                     )
-                    .padding(horizontal = 12.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.QrCode2,
-                    contentDescription = "Ảnh nền QR",
-                    tint = style.emeraldColor,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Ảnh nền QR điện thoại",
-                    color = style.textPrimary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            if (sleepTimerSeconds != null && sleepTimerSeconds > 0) {
-                val minutes = sleepTimerSeconds / 60
-                val seconds = sleepTimerSeconds % 60
+                }
+            } else {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(style.amberBg)
-                        .border(1.dp, style.amberBorder, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .tvFocusable(
+                            tag = "sidebar_toggle_style",
+                            shape = RoundedCornerShape(12.dp),
+                            defaultBgColor = style.surfaceVariant,
+                            defaultBorderColor = style.borderColor,
+                            elevation = 0.dp,
+                            onClick = onToggleStyle
+                        )
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Timer,
-                        contentDescription = "Hẹn giờ",
-                        tint = style.amberColor,
+                        imageVector = if (style.isGlassStyle) Icons.Default.AutoAwesome else Icons.Default.WbSunny,
+                        contentDescription = "Chuyển giao diện",
+                        tint = style.accentColor,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Tắt sau: %02d:%02d".format(minutes, seconds),
-                        color = style.amberColor,
+                        text = if (style.isGlassStyle) "Style: Apple TV Kính" else "Style: Nền Trắng",
+                        color = style.textPrimary,
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-            } else {
-                Column(
+
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(style.surfaceVariant)
-                        .border(1.dp, style.borderColor, RoundedCornerShape(10.dp))
-                        .padding(10.dp)
+                        .tvFocusable(
+                            tag = "sidebar_qr_bg",
+                            shape = RoundedCornerShape(12.dp),
+                            defaultBgColor = style.surfaceVariant,
+                            defaultBorderColor = style.borderColor,
+                            elevation = 0.dp,
+                            onClick = onOpenQrBackground
+                        )
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Định dạng:",
-                        color = style.textSecondary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
+                    Icon(
+                        imageVector = Icons.Default.QrCode2,
+                        contentDescription = "Ảnh nền QR",
+                        tint = style.emeraldColor,
+                        modifier = Modifier.size(18.dp)
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "FLAC • MP3 • WAV • AAC • OGG",
+                        text = "Ảnh nền QR điện thoại",
                         color = style.textPrimary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
+                }
+
+                if (sleepTimerSeconds != null && sleepTimerSeconds > 0) {
+                    val minutes = sleepTimerSeconds / 60
+                    val seconds = sleepTimerSeconds % 60
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(style.amberBg)
+                            .border(1.dp, style.amberBorder, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Timer,
+                            contentDescription = "Hẹn giờ",
+                            tint = style.amberColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Tắt sau: %02d:%02d".format(minutes, seconds),
+                            color = style.amberColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(style.surfaceVariant)
+                            .border(1.dp, style.borderColor, RoundedCornerShape(10.dp))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = "Định dạng:",
+                            color = style.textSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "FLAC • MP3 • WAV • AAC • OGG",
+                            color = style.textPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
         }
