@@ -336,8 +336,8 @@ class MusicRepository(private val context: Context) {
     }
 
     private fun loadCoverArtStyle(): CoverArtStyle {
-        val name = prefs.getString("cover_art_style", CoverArtStyle.SPINNING_DISC.name)
-        return CoverArtStyle.entries.find { it.name == name } ?: CoverArtStyle.SPINNING_DISC
+        val name = prefs.getString("cover_art_style", CoverArtStyle.ROUNDED_SQUARE.name)
+        return CoverArtStyle.entries.find { it.name == name } ?: CoverArtStyle.ROUNDED_SQUARE
     }
 
     private fun loadWifiMusicRole(): WifiMusicRole {

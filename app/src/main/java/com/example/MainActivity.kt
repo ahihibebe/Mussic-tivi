@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -301,8 +302,18 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
         }
     }
 
+    BackHandler(
+        enabled = currentTab != TvNavTab.FOLDERS || (isPlaying && backgroundPlaybackEnabled)
+    ) {
+        if (currentTab != TvNavTab.FOLDERS) {
+            viewModel.selectTab(TvNavTab.FOLDERS)
+        } else if (isPlaying && backgroundPlaybackEnabled) {
+            (context as? Activity)?.moveTaskToBack(true)
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
-        // Layer 1: Base theme backdrop (Apple TV Cinema Ambient or Crisp Light)
+        // Layer 1: Base theme backdrop (Apple TV Translucent Black Glass or Crisp Light)
         if (uiStyle == AppUiStyle.APPLE_TV_GLASS) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawRect(
@@ -312,7 +323,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                 )
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(AppleTvGlowTop.copy(alpha = 0.65f), Color.Transparent),
+                        colors = listOf(AppleTvGlowTop.copy(alpha = 0.45f), Color.Transparent),
                         center = Offset(size.width * 0.22f, size.height * 0.20f),
                         radius = size.maxDimension * 0.55f
                     ),
@@ -321,7 +332,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                 )
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(AppleTvGlowBottom.copy(alpha = 0.55f), Color.Transparent),
+                        colors = listOf(AppleTvGlowBottom.copy(alpha = 0.38f), Color.Transparent),
                         center = Offset(size.width * 0.82f, size.height * 0.80f),
                         radius = size.maxDimension * 0.60f
                     ),
@@ -360,7 +371,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
 
             // Subtle readability veil over background image
             val scrimColor = if (uiStyle == AppUiStyle.APPLE_TV_GLASS) {
-                Color(0xFF060A14).copy(alpha = 0.26f * backgroundOpacity)
+                Color.Black.copy(alpha = 0.28f * backgroundOpacity)
             } else {
                 Color.White.copy(alpha = 0.14f)
             }

@@ -10,16 +10,16 @@ val LightSurfaceVariant = Color(0xFFF1F5F9)   // Slate 100
 val LightBorder = Color(0xFFE2E8F0)           // Slate 200
 val LightBorderSubtle = Color(0xFFEEF2F6)
 
-// Apple TV / tvOS Frosted Glass Palette
-val AppleTvDeepBg = Color(0xFF0A0F1E)         // Deep Cinema Midnight
-val AppleTvMidBg = Color(0xFF151E32)          // Deep Indigo Slate
-val AppleTvGlowTop = Color(0xFF1E3A5F)        // Subtle Sapphire Wash
-val AppleTvGlowBottom = Color(0xFF2D1B4E)     // Subtle Plum Wash
-val AppleTvGlassSurface = Color(0x521E293B)   // Translucent dark-tinted frost
-val AppleTvGlassCard = Color(0x47FFFFFF)      // Frosted luminous glass card base (blended over scrim)
-val AppleTvGlassCardDark = Color(0x66131C31)  // High-contrast frosted card
-val AppleTvGlassVariant = Color(0x26FFFFFF)   // Lighter frosted chip/pill
-val AppleTvGlassBorder = Color(0x40FFFFFF)    // Specular glass edge
+// Apple TV / tvOS Translucent Black Glass Palette
+val AppleTvDeepBg = Color(0xFF000000)         // Pure Black
+val AppleTvMidBg = Color(0xFF08080A)          // Smoked Charcoal Black
+val AppleTvGlowTop = Color(0xFF1A1A1D)        // Subtle Dark Sheen
+val AppleTvGlowBottom = Color(0xFF121215)     // Subtle Dark Sheen
+val AppleTvGlassSurface = Color(0x78000000)   // Translucent Black Frost
+val AppleTvGlassCard = Color(0x6B000000)      // Translucent Black Card
+val AppleTvGlassCardDark = Color(0x88000000)  // Deeper Translucent Black Card
+val AppleTvGlassVariant = Color(0x52000000)   // Translucent Black Chip/Pill
+val AppleTvGlassBorder = Color(0x33FFFFFF)    // Specular Glass Edge
 val AppleTvFocusFill = Color(0xEBFFFFFF)      // Crisp bright frosted white focus pill
 val AppleTvFocusBorder = Color(0xF2FFFFFF)    // Pure luminous white border
 val AppleTvAccent = Color(0xFF38BDF8)         // Sky Luminous Blue

@@ -18,7 +18,11 @@ class CleanHiResPcmAudioProcessor : BaseAudioProcessor() {
     @Volatile
     var antiHissEnabled: Boolean = true
 
+    private val remainder = ByteArray(4)
+    private var remainderSize = 0
+
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        remainderSize = 0
         if (!antiHissEnabled) {
             return AudioProcessor.AudioFormat.NOT_SET
         }
@@ -36,6 +40,14 @@ class CleanHiResPcmAudioProcessor : BaseAudioProcessor() {
         }
     }
 
+    override fun onFlush() {
+        remainderSize = 0
+    }
+
+    override fun onReset() {
+        remainderSize = 0
+    }
+
     override fun queueInput(inputBuffer: ByteBuffer) {
         val remaining = inputBuffer.remaining()
         if (remaining <= 0) return
@@ -46,16 +58,39 @@ class CleanHiResPcmAudioProcessor : BaseAudioProcessor() {
             C.ENCODING_PCM_24BIT_BIG_ENDIAN -> 3
             C.ENCODING_PCM_32BIT,
             C.ENCODING_PCM_FLOAT -> 4
-            else -> return
+            else -> {
+                inputBuffer.position(inputBuffer.limit())
+                return
+            }
         }
 
-        val sampleCount = remaining / bytesPerInputSample
-        if (sampleCount <= 0) return
+        val totalAvailable = remainderSize + remaining
+        val sampleCount = totalAvailable / bytesPerInputSample
+        if (sampleCount <= 0) {
+            while (inputBuffer.hasRemaining() && remainderSize < remainder.size) {
+                remainder[remainderSize++] = inputBuffer.get()
+            }
+            return
+        }
 
         val outBuffer = replaceOutputBuffer(sampleCount * 2)
+        var samplesWritten = 0
+
+        // Complete any partial sample carried over from the previous chunk
+        if (remainderSize > 0) {
+            val needed = bytesPerInputSample - remainderSize
+            for (i in 0 until needed) {
+                remainder[remainderSize++] = inputBuffer.get()
+            }
+            outBuffer.putShort(convertSampleFromArray(remainder, encoding))
+            remainderSize = 0
+            samplesWritten++
+        }
+
+        val fullSamplesFromInput = (sampleCount - samplesWritten).coerceAtLeast(0)
         when (encoding) {
             C.ENCODING_PCM_24BIT -> {
-                for (i in 0 until sampleCount) {
+                for (i in 0 until fullSamplesFromInput) {
                     val b0 = inputBuffer.get().toInt() and 0xFF
                     val b1 = inputBuffer.get().toInt() and 0xFF
                     val b2 = inputBuffer.get().toInt()
@@ -65,7 +100,7 @@ class CleanHiResPcmAudioProcessor : BaseAudioProcessor() {
                 }
             }
             C.ENCODING_PCM_24BIT_BIG_ENDIAN -> {
-                for (i in 0 until sampleCount) {
+                for (i in 0 until fullSamplesFromInput) {
                     val b0 = inputBuffer.get().toInt()
                     val b1 = inputBuffer.get().toInt() and 0xFF
                     val b2 = inputBuffer.get().toInt() and 0xFF
@@ -75,7 +110,7 @@ class CleanHiResPcmAudioProcessor : BaseAudioProcessor() {
                 }
             }
             C.ENCODING_PCM_32BIT -> {
-                for (i in 0 until sampleCount) {
+                for (i in 0 until fullSamplesFromInput) {
                     val b0 = inputBuffer.get().toInt() and 0xFF
                     val b1 = inputBuffer.get().toInt() and 0xFF
                     val b2 = inputBuffer.get().toInt() and 0xFF
@@ -86,13 +121,55 @@ class CleanHiResPcmAudioProcessor : BaseAudioProcessor() {
                 }
             }
             C.ENCODING_PCM_FLOAT -> {
-                for (i in 0 until sampleCount) {
+                for (i in 0 until fullSamplesFromInput) {
                     val f = inputBuffer.float.coerceIn(-1.0f, 1.0f)
                     val sample16 = (f * 32767f).toInt().coerceIn(-32768, 32767)
                     outBuffer.putShort(sample16.toShort())
                 }
             }
         }
+
+        // Save any remaining partial sample (< bytesPerInputSample) for the next buffer
+        while (inputBuffer.hasRemaining() && remainderSize < remainder.size) {
+            remainder[remainderSize++] = inputBuffer.get()
+        }
+
         outBuffer.flip()
+    }
+
+    private fun convertSampleFromArray(bytes: ByteArray, encoding: Int): Short {
+        return when (encoding) {
+            C.ENCODING_PCM_24BIT -> {
+                val b0 = bytes[0].toInt() and 0xFF
+                val b1 = bytes[1].toInt() and 0xFF
+                val b2 = bytes[2].toInt()
+                val sample24 = b0 or (b1 shl 8) or (b2 shl 16)
+                ((sample24 + 128) shr 8).coerceIn(-32768, 32767).toShort()
+            }
+            C.ENCODING_PCM_24BIT_BIG_ENDIAN -> {
+                val b0 = bytes[0].toInt()
+                val b1 = bytes[1].toInt() and 0xFF
+                val b2 = bytes[2].toInt() and 0xFF
+                val sample24 = (b0 shl 16) or (b1 shl 8) or b2
+                ((sample24 + 128) shr 8).coerceIn(-32768, 32767).toShort()
+            }
+            C.ENCODING_PCM_32BIT -> {
+                val b0 = bytes[0].toInt() and 0xFF
+                val b1 = bytes[1].toInt() and 0xFF
+                val b2 = bytes[2].toInt() and 0xFF
+                val b3 = bytes[3].toInt()
+                val sample32 = b0 or (b1 shl 8) or (b2 shl 16) or (b3 shl 24)
+                ((sample32 + 32768) shr 16).coerceIn(-32768, 32767).toShort()
+            }
+            C.ENCODING_PCM_FLOAT -> {
+                val bits = (bytes[0].toInt() and 0xFF) or
+                    ((bytes[1].toInt() and 0xFF) shl 8) or
+                    ((bytes[2].toInt() and 0xFF) shl 16) or
+                    ((bytes[3].toInt() and 0xFF) shl 24)
+                val f = java.lang.Float.intBitsToFloat(bits).coerceIn(-1.0f, 1.0f)
+                (f * 32767f).toInt().coerceIn(-32768, 32767).toShort()
+            }
+            else -> 0
+        }
     }
 }

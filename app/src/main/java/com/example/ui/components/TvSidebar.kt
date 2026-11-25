@@ -105,7 +105,7 @@ fun TvSidebar(
                         .size(46.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(
-                            if (style.isGlassStyle) Color(0x40FFFFFF) else Color(0xFF1E293B)
+                            if (style.isGlassStyle) Color.Black.copy(alpha = 0.55f) else Color(0xFF1E293B)
                         )
                         .border(
                             1.dp,
@@ -133,7 +133,7 @@ fun TvSidebar(
                             .size(46.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(
-                                if (style.isGlassStyle) Color(0x40FFFFFF) else Color(0xFF1E293B)
+                                if (style.isGlassStyle) Color.Black.copy(alpha = 0.55f) else Color(0xFF1E293B)
                             )
                             .border(
                                 1.dp,

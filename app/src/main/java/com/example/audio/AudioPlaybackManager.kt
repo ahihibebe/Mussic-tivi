@@ -14,6 +14,7 @@ import com.example.model.RepeatMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +26,7 @@ import java.io.File
 class AudioPlaybackManager(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("tv_music_prefs", Context.MODE_PRIVATE)
-    private val scope = CoroutineScope(Dispatchers.Main + Job())
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var exoPlayer: ExoPlayer? = null
 
     private val _currentTrack = MutableStateFlow<AudioTrack?>(null)
@@ -93,7 +94,7 @@ class AudioPlaybackManager(private val context: Context) {
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             _isPlaying.value = isPlaying
-            if (isPlaying && _backgroundPlaybackEnabled.value) {
+            if (isPlaying && _backgroundPlaybackEnabled.value && exoPlayer?.currentMediaItem != null) {
                 MusicPlaybackService.ensureStarted(context)
             }
         }
@@ -115,6 +116,10 @@ class AudioPlaybackManager(private val context: Context) {
         override fun onPlayerError(error: PlaybackException) {
             Log.e("AudioPlaybackManager", "ExoPlayer error: ${error.errorCodeName}", error)
             _isPlaying.value = false
+            try {
+                exoPlayer?.stop()
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -185,8 +190,8 @@ class AudioPlaybackManager(private val context: Context) {
             if (_backgroundPlaybackEnabled.value) {
                 MusicPlaybackService.ensureStarted(context)
             }
-        } catch (e: Exception) {
-            Log.e("AudioPlaybackManager", "Error preparing track: ${track.filePath}", e)
+        } catch (t: Throwable) {
+            Log.e("AudioPlaybackManager", "Error preparing track: ${track.filePath}", t)
             _isPlaying.value = false
         }
     }

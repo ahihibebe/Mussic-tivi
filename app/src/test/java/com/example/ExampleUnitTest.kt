@@ -179,6 +179,29 @@ class ExampleUnitTest {
     assertEquals(4, output.remaining())
     assertEquals(32767.toShort(), output.short)
     assertEquals((-16384).toShort(), output.short)
+
+    // Unaligned chunk boundary: 4 bytes first (1 sample + 1 leftover byte), then 2 bytes
+    val chunk1 = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder()).apply {
+      put(0x00.toByte()); put(0x00.toByte()); put(0x40.toByte())
+      put(0xFF.toByte())
+      flip()
+    }
+    processor.queueInput(chunk1)
+    assertEquals(0, chunk1.remaining())
+    val out1 = processor.output
+    assertEquals(2, out1.remaining())
+    assertEquals(16384.toShort(), out1.short)
+
+    val chunk2 = ByteBuffer.allocateDirect(2).order(ByteOrder.nativeOrder()).apply {
+      put(0xFF.toByte()); put(0x7F.toByte())
+      flip()
+    }
+    processor.queueInput(chunk2)
+    assertEquals(0, chunk2.remaining())
+    val out2 = processor.output
+    assertEquals(2, out2.remaining())
+    assertEquals(32767.toShort(), out2.short)
+
     assertTrue(TvNavTab.entries.contains(TvNavTab.BACKGROUND_PLAY))
   }
 }

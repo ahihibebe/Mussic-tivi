@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -78,7 +79,7 @@ fun NowPlayingScreen(
     visualizerBands: List<Float>,
     playlist: List<AudioTrack>,
     allTracks: List<AudioTrack> = emptyList(),
-    coverArtStyle: CoverArtStyle = CoverArtStyle.SPINNING_DISC,
+    coverArtStyle: CoverArtStyle = CoverArtStyle.ROUNDED_SQUARE,
     onSetCoverArtStyle: (CoverArtStyle) -> Unit = {},
     onPlayPause: () -> Unit,
     onSkipNext: () -> Unit,
@@ -125,17 +126,17 @@ fun NowPlayingScreen(
             .padding(horizontal = 24.dp, vertical = 14.dp)
     ) {
         val isCompactLayout = maxWidth < 680.dp
-        val coverSize = if (isCompactLayout) 136.dp else 196.dp
+        val coverSize = if (isCompactLayout) 124.dp else 188.dp
 
         if (isCompactLayout) {
             Column(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.Top
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.Top
                 ) {
                     AlbumCoverView(
                         albumArtUri = currentTrack?.albumArtUri,
@@ -151,13 +152,34 @@ fun NowPlayingScreen(
                             totalQueueSize = displayTracks.size,
                             onToggleFavorite = onToggleFavorite
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        CoverStyleToggleRow(
-                            coverArtStyle = coverArtStyle,
-                            onSetCoverArtStyle = onSetCoverArtStyle
-                        )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CoverStyleToggleRow(
+                        coverArtStyle = coverArtStyle,
+                        onSetCoverArtStyle = onSetCoverArtStyle,
+                        compact = true
+                    )
+                    BunnyProgressBar(
+                        progress = progress,
+                        durationMs = durationMs,
+                        elapsedStr = elapsedStr,
+                        totalStr = totalStr,
+                        isPlaying = currentTrack != null && isPlaying,
+                        enabled = currentTrack != null && durationMs > 0L,
+                        onSeekTo = onSeekTo,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 PlayMenuSection(
                     isPlaying = currentTrack != null && isPlaying,
@@ -174,15 +196,7 @@ fun NowPlayingScreen(
                     onSetSleepTimer = onSetSleepTimer
                 )
 
-                BunnyProgressBar(
-                    progress = progress,
-                    durationMs = durationMs,
-                    elapsedStr = elapsedStr,
-                    totalStr = totalStr,
-                    isPlaying = currentTrack != null && isPlaying,
-                    enabled = currentTrack != null && durationMs > 0L,
-                    onSeekTo = onSeekTo
-                )
+                Spacer(modifier = Modifier.height(8.dp))
 
                 NowPlayingQueueSection(
                     tracks = displayTracks,
@@ -197,122 +211,155 @@ fun NowPlayingScreen(
                 )
             }
         } else {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.spacedBy(26.dp)
+                verticalArrangement = Arrangement.Top
             ) {
-                // Left Column: Cover Art + Cover Style Toggle + Audio Visualizer + Equalizer Presets
-                Column(
-                    modifier = Modifier
-                        .weight(0.78f)
-                        .fillMaxHeight(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                // Top Row: Cover Art top-aligned with Track Header + Play Menu
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(26.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
-                    AlbumCoverView(
-                        albumArtUri = currentTrack?.albumArtUri,
-                        coverStyle = coverArtStyle,
-                        isPlaying = currentTrack != null && isPlaying,
-                        size = coverSize,
-                        cornerRadius = 14.dp,
-                        showCenterHole = true
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    CoverStyleToggleRow(
-                        coverArtStyle = coverArtStyle,
-                        onSetCoverArtStyle = onSetCoverArtStyle
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    AudioVisualizerView(
-                        bands = visualizerBands,
-                        barCount = 16,
-                        height = 56.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(style.cardSurface)
-                            .border(1.dp, style.borderColor, RoundedCornerShape(14.dp))
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Box(
+                        modifier = Modifier.weight(0.78f),
+                        contentAlignment = Alignment.TopCenter
                     ) {
-                        EqualizerPreset.values().forEach { eq ->
-                            val isSelected = equalizerPreset == eq
-                            Box(
-                                modifier = Modifier
-                                    .tvFocusable(
-                                        tag = "eq_chip_${eq.name.lowercase()}",
-                                        shape = RoundedCornerShape(12.dp),
-                                        defaultBgColor = if (isSelected) style.selectedPillSurface else style.cardSurface,
-                                        defaultBorderColor = if (isSelected) style.accentColor else style.borderColor,
-                                        onClick = { onSetEqualizer(eq) }
-                                    )
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    text = eq.title,
-                                    color = if (isSelected) style.accentColor else style.textSecondary,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                )
-                            }
-                        }
+                        AlbumCoverView(
+                            albumArtUri = currentTrack?.albumArtUri,
+                            coverStyle = coverArtStyle,
+                            isPlaying = currentTrack != null && isPlaying,
+                            size = coverSize,
+                            cornerRadius = 14.dp,
+                            showCenterHole = true
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier.weight(1.22f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        NowPlayingTrackHeader(
+                            currentTrack = currentTrack,
+                            totalQueueSize = displayTracks.size,
+                            onToggleFavorite = onToggleFavorite
+                        )
+
+                        PlayMenuSection(
+                            isPlaying = currentTrack != null && isPlaying,
+                            isShuffle = isShuffle,
+                            repeatMode = repeatMode,
+                            sleepTimerSeconds = sleepTimerSeconds,
+                            onPlayPause = onPlayPause,
+                            onSkipNext = onSkipNext,
+                            onSkipPrevious = onSkipPrevious,
+                            onSeekForward = onSeekForward,
+                            onSeekRewind = onSeekRewind,
+                            onToggleShuffle = onToggleShuffle,
+                            onCycleRepeatMode = onCycleRepeatMode,
+                            onSetSleepTimer = onSetSleepTimer
+                        )
                     }
                 }
 
-                // Right Column:
-                // 1. Track Info
-                // 2. Play Menu (Transport + Shuffle/Repeat/Timer)
-                // 3. Bunny Progress Bar (moved below Play Menu)
-                // 4. Smooth-scrolling Song List directly below
-                Column(
-                    modifier = Modifier
-                        .weight(1.22f)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Middle Row: Cover Style Toggle aligned horizontally with Bunny Progress Bar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(26.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    NowPlayingTrackHeader(
-                        currentTrack = currentTrack,
-                        totalQueueSize = displayTracks.size,
-                        onToggleFavorite = onToggleFavorite
-                    )
+                    Box(
+                        modifier = Modifier.weight(0.78f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CoverStyleToggleRow(
+                            coverArtStyle = coverArtStyle,
+                            onSetCoverArtStyle = onSetCoverArtStyle
+                        )
+                    }
 
-                    PlayMenuSection(
-                        isPlaying = currentTrack != null && isPlaying,
-                        isShuffle = isShuffle,
-                        repeatMode = repeatMode,
-                        sleepTimerSeconds = sleepTimerSeconds,
-                        onPlayPause = onPlayPause,
-                        onSkipNext = onSkipNext,
-                        onSkipPrevious = onSkipPrevious,
-                        onSeekForward = onSeekForward,
-                        onSeekRewind = onSeekRewind,
-                        onToggleShuffle = onToggleShuffle,
-                        onCycleRepeatMode = onCycleRepeatMode,
-                        onSetSleepTimer = onSetSleepTimer
-                    )
+                    Box(
+                        modifier = Modifier.weight(1.22f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BunnyProgressBar(
+                            progress = progress,
+                            durationMs = durationMs,
+                            elapsedStr = elapsedStr,
+                            totalStr = totalStr,
+                            isPlaying = currentTrack != null && isPlaying,
+                            enabled = currentTrack != null && durationMs > 0L,
+                            onSeekTo = onSeekTo,
+                            modifier = Modifier
+                                .widthIn(max = 380.dp)
+                                .fillMaxWidth(0.90f)
+                        )
+                    }
+                }
 
-                    BunnyProgressBar(
-                        progress = progress,
-                        durationMs = durationMs,
-                        elapsedStr = elapsedStr,
-                        totalStr = totalStr,
-                        isPlaying = currentTrack != null && isPlaying,
-                        enabled = currentTrack != null && durationMs > 0L,
-                        onSeekTo = onSeekTo
-                    )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Bottom Row: Visualizer + Equalizer on the left, Smooth-scrolling Queue on the right
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(26.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(0.78f)
+                            .fillMaxHeight(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Top
+                    ) {
+                        AudioVisualizerView(
+                            bands = visualizerBands,
+                            barCount = 16,
+                            height = 56.dp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(style.cardSurface)
+                                .border(1.dp, style.borderColor, RoundedCornerShape(14.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            EqualizerPreset.values().forEach { eq ->
+                                val isSelected = equalizerPreset == eq
+                                Box(
+                                    modifier = Modifier
+                                        .tvFocusable(
+                                            tag = "eq_chip_${eq.name.lowercase()}",
+                                            shape = RoundedCornerShape(12.dp),
+                                            defaultBgColor = if (isSelected) style.selectedPillSurface else style.cardSurface,
+                                            defaultBorderColor = if (isSelected) style.accentColor else style.borderColor,
+                                            onClick = { onSetEqualizer(eq) }
+                                        )
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = eq.title,
+                                        color = if (isSelected) style.accentColor else style.textSecondary,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     NowPlayingQueueSection(
                         tracks = displayTracks,
@@ -322,8 +369,8 @@ fun NowPlayingScreen(
                         listState = queueListState,
                         onSelectQueueTrack = onSelectQueueTrack,
                         modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
+                            .weight(1.22f)
+                            .fillMaxHeight()
                     )
                 }
             }
@@ -334,11 +381,12 @@ fun NowPlayingScreen(
 @Composable
 private fun CoverStyleToggleRow(
     coverArtStyle: CoverArtStyle,
-    onSetCoverArtStyle: (CoverArtStyle) -> Unit
+    onSetCoverArtStyle: (CoverArtStyle) -> Unit,
+    compact: Boolean = false
 ) {
     val style = LocalTvStyle.current
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         val isSquare = coverArtStyle == CoverArtStyle.ROUNDED_SQUARE
@@ -353,21 +401,23 @@ private fun CoverStyleToggleRow(
                     defaultBorderColor = if (isSquare) style.accentColor else style.borderColor,
                     onClick = { onSetCoverArtStyle(CoverArtStyle.ROUNDED_SQUARE) }
                 )
-                .padding(horizontal = 10.dp, vertical = 6.dp),
+                .padding(horizontal = if (compact) 7.dp else 10.dp, vertical = if (compact) 5.dp else 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Default.CropSquare,
                 contentDescription = "Vuông bo góc",
                 tint = if (isSquare) style.accentColor else style.textSecondary,
-                modifier = Modifier.size(15.dp)
+                modifier = Modifier.size(if (compact) 13.dp else 15.dp)
             )
-            Spacer(modifier = Modifier.width(5.dp))
+            Spacer(modifier = Modifier.width(if (compact) 4.dp else 5.dp))
             Text(
-                text = "Vuông bo góc",
+                text = if (compact) "Vuông" else "Vuông bo góc",
                 color = if (isSquare) style.accentColor else style.textSecondary,
-                fontSize = 11.sp,
-                fontWeight = if (isSquare) FontWeight.Bold else FontWeight.Medium
+                fontSize = if (compact) 10.sp else 11.sp,
+                fontWeight = if (isSquare) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                softWrap = false
             )
         }
 
@@ -380,21 +430,23 @@ private fun CoverStyleToggleRow(
                     defaultBorderColor = if (isDisc) style.accentColor else style.borderColor,
                     onClick = { onSetCoverArtStyle(CoverArtStyle.SPINNING_DISC) }
                 )
-                .padding(horizontal = 10.dp, vertical = 6.dp),
+                .padding(horizontal = if (compact) 7.dp else 10.dp, vertical = if (compact) 5.dp else 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Default.Album,
                 contentDescription = "Đĩa xoay",
                 tint = if (isDisc) style.accentColor else style.textSecondary,
-                modifier = Modifier.size(15.dp)
+                modifier = Modifier.size(if (compact) 13.dp else 15.dp)
             )
-            Spacer(modifier = Modifier.width(5.dp))
+            Spacer(modifier = Modifier.width(if (compact) 4.dp else 5.dp))
             Text(
                 text = "Đĩa xoay",
                 color = if (isDisc) style.accentColor else style.textSecondary,
-                fontSize = 11.sp,
-                fontWeight = if (isDisc) FontWeight.Bold else FontWeight.Medium
+                fontSize = if (compact) 10.sp else 11.sp,
+                fontWeight = if (isDisc) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                softWrap = false
             )
         }
     }
@@ -476,7 +528,7 @@ private fun NowPlayingTrackHeader(
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = currentTrack?.title ?: if (totalQueueSize > 0) "Chưa chọn bài hát" else "Trình phát nhạc TV Music",
+            text = currentTrack?.title ?: if (totalQueueSize > 0) "Chưa chọn bài hát" else "Trình phát nhạc",
             color = style.textPrimary,
             fontSize = 21.sp,
             fontWeight = FontWeight.Bold,
@@ -531,7 +583,7 @@ private fun PlayMenuSection(
         ) {
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(42.dp)
                     .tvFocusable(
                         tag = "np_btn_rewind",
                         shape = CircleShape,
@@ -543,7 +595,7 @@ private fun PlayMenuSection(
                     imageVector = Icons.Default.FastRewind,
                     contentDescription = "Lùi 10 giây",
                     tint = style.textPrimary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(19.dp)
                 )
             }
 
@@ -551,7 +603,7 @@ private fun PlayMenuSection(
 
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(46.dp)
                     .tvFocusable(
                         tag = "np_btn_prev",
                         shape = CircleShape,
@@ -563,7 +615,7 @@ private fun PlayMenuSection(
                     imageVector = Icons.Default.SkipPrevious,
                     contentDescription = "Bài trước",
                     tint = style.textPrimary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
@@ -571,7 +623,7 @@ private fun PlayMenuSection(
 
             Box(
                 modifier = Modifier
-                    .size(60.dp)
+                    .size(56.dp)
                     .tvFocusable(
                         tag = "np_btn_play_pause",
                         shape = CircleShape,
@@ -588,7 +640,7 @@ private fun PlayMenuSection(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Tạm dừng" else "Phát",
                     tint = style.accentContentColor,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(30.dp)
                 )
             }
 
@@ -596,7 +648,7 @@ private fun PlayMenuSection(
 
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(46.dp)
                     .tvFocusable(
                         tag = "np_btn_next",
                         shape = CircleShape,
@@ -608,7 +660,7 @@ private fun PlayMenuSection(
                     imageVector = Icons.Default.SkipNext,
                     contentDescription = "Bài tiếp theo",
                     tint = style.textPrimary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
@@ -616,7 +668,7 @@ private fun PlayMenuSection(
 
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(42.dp)
                     .tvFocusable(
                         tag = "np_btn_forward",
                         shape = CircleShape,
@@ -628,7 +680,7 @@ private fun PlayMenuSection(
                     imageVector = Icons.Default.FastForward,
                     contentDescription = "Tiến 10 giây",
                     tint = style.textPrimary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(19.dp)
                 )
             }
         }

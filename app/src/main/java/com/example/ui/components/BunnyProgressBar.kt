@@ -86,12 +86,12 @@ fun BunnyProgressBar(
         modifier = modifier
             .fillMaxWidth()
             .testTag("np_bunny_progress_bar")
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(if (isFocused) style.focusedSurface else style.cardSurface)
             .border(
                 width = if (isFocused) 1.5.dp else 1.dp,
                 color = if (isFocused) style.focusedBorderColor else style.borderColor,
-                shape = RoundedCornerShape(14.dp)
+                shape = RoundedCornerShape(12.dp)
             )
             .onFocusChanged { isFocused = it.isFocused }
             .focusable(enabled = enabled)
@@ -115,17 +115,17 @@ fun BunnyProgressBar(
                     false
                 }
             }
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(38.dp)
+                .height(26.dp)
                 .pointerHoverIcon(PointerIcon.Hand)
                 .pointerInput(enabled, durationMs) {
                     if (!enabled || durationMs <= 0L) return@pointerInput
                     detectTapGestures { offset ->
-                        val pad = 16.dp.toPx()
+                        val pad = 14.dp.toPx()
                         val usable = (size.width - pad * 2f).coerceAtLeast(1f)
                         val ratio = ((offset.x - pad) / usable).coerceIn(0f, 1f)
                         onSeekTo((ratio * durationMs).toLong())
@@ -135,7 +135,7 @@ fun BunnyProgressBar(
                     if (!enabled || durationMs <= 0L) return@pointerInput
                     detectHorizontalDragGestures { change, _ ->
                         change.consume()
-                        val pad = 16.dp.toPx()
+                        val pad = 14.dp.toPx()
                         val usable = (size.width - pad * 2f).coerceAtLeast(1f)
                         val ratio = ((change.position.x - pad) / usable).coerceIn(0f, 1f)
                         onSeekTo((ratio * durationMs).toLong())
@@ -143,10 +143,10 @@ fun BunnyProgressBar(
                 }
         ) {
             Canvas(modifier = Modifier.matchParentSize()) {
-                val trackPadding = 16.dp.toPx()
+                val trackPadding = 14.dp.toPx()
                 val usableWidth = (size.width - trackPadding * 2f).coerceAtLeast(1f)
-                val trackY = size.height * 0.74f
-                val trackHeight = 6.dp.toPx()
+                val trackY = size.height * 0.80f
+                val trackHeight = 4.5.dp.toPx()
                 val bunnyX = trackPadding + usableWidth * clampedProgress
 
                 // Inactive background track
@@ -176,31 +176,31 @@ fun BunnyProgressBar(
                 }
 
                 // Trailing tiny dust puffs when bunny is actively running
-                if (isPlaying && enabled && activeWidth > 18.dp.toPx()) {
-                    val puffShift = activePhase * 10.dp.toPx()
+                if (isPlaying && enabled && activeWidth > 14.dp.toPx()) {
+                    val puffShift = activePhase * 7.dp.toPx()
                     drawCircle(
-                        color = style.accentColor.copy(alpha = (0.38f * (1f - activePhase)).coerceIn(0f, 0.4f)),
-                        radius = 2.6.dp.toPx(),
-                        center = Offset((bunnyX - 16.dp.toPx() - puffShift).coerceAtLeast(trackPadding), trackY - 5.dp.toPx())
+                        color = style.accentColor.copy(alpha = (0.36f * (1f - activePhase)).coerceIn(0f, 0.36f)),
+                        radius = 2.0.dp.toPx(),
+                        center = Offset((bunnyX - 12.dp.toPx() - puffShift).coerceAtLeast(trackPadding), trackY - 3.8.dp.toPx())
                     )
                     drawCircle(
-                        color = style.accentColor.copy(alpha = (0.25f * (1f - activePhase)).coerceIn(0f, 0.3f)),
-                        radius = 1.8.dp.toPx(),
-                        center = Offset((bunnyX - 24.dp.toPx() - puffShift * 1.2f).coerceAtLeast(trackPadding), trackY - 3.dp.toPx())
+                        color = style.accentColor.copy(alpha = (0.24f * (1f - activePhase)).coerceIn(0f, 0.25f)),
+                        radius = 1.4.dp.toPx(),
+                        center = Offset((bunnyX - 18.dp.toPx() - puffShift * 1.2f).coerceAtLeast(trackPadding), trackY - 2.4.dp.toPx())
                     )
                 }
 
                 // Progress anchor dot directly under the bunny
                 drawCircle(
                     color = style.accentColor,
-                    radius = 4.5.dp.toPx(),
+                    radius = 3.5.dp.toPx(),
                     center = Offset(bunnyX, trackY)
                 )
 
                 // Animated running bunny sitting / bounding above the progress anchor
-                val hopOffsetY = bounceWave * 5.5.dp.toPx()
+                val hopOffsetY = bounceWave * 2.4.dp.toPx()
                 val bunnyCenterX = bunnyX
-                val bunnyGroundY = trackY - 3.dp.toPx() - hopOffsetY
+                val bunnyGroundY = trackY - 1.8.dp.toPx() - hopOffsetY
 
                 drawRunningBunny(
                     centerX = bunnyCenterX,
@@ -224,13 +224,13 @@ fun BunnyProgressBar(
             Text(
                 text = elapsedStr,
                 color = if (enabled) style.accentColor else style.textMuted,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
                 text = totalStr,
                 color = style.textSecondary,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Medium
             )
         }
@@ -247,7 +247,7 @@ private fun DrawScope.drawRunningBunny(
     earInnerColor: Color,
     eyeColor: Color
 ) {
-    val unit = 1.dp.toPx()
+    val unit = 0.62.dp.toPx()
     val bodyTilt = if (isRunning) -8f + stride * 9f else 0f
 
     rotate(degrees = bodyTilt, pivot = Offset(centerX, groundY - 8f * unit)) {

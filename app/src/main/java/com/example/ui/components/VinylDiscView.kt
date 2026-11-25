@@ -94,6 +94,8 @@ fun RoundedSquareCoverView(
         Brush.verticalGradient(listOf(style.borderColor, style.borderColor))
     }
 
+    val modelData = remember(albumArtUri) { resolveCoilImageModel(albumArtUri) }
+
     Box(
         modifier = modifier
             .size(size)
@@ -107,7 +109,7 @@ fun RoundedSquareCoverView(
             .background(
                 Brush.linearGradient(
                     colors = if (style.isGlassStyle) {
-                        listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+                        listOf(Color(0xFF141416), Color(0xFF050507))
                     } else {
                         listOf(Color(0xFF1E293B), Color(0xFF334155))
                     }
@@ -116,7 +118,6 @@ fun RoundedSquareCoverView(
             .border(width = if (size >= 120.dp) 1.5.dp else 1.dp, brush = borderBrush, shape = shape),
         contentAlignment = Alignment.Center
     ) {
-        val modelData = remember(albumArtUri) { resolveCoilImageModel(albumArtUri) }
         if (modelData != null && !loadFailed) {
             AsyncImage(
                 model = ImageRequest.Builder(context)
