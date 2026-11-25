@@ -23,8 +23,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 
-class AudioPlaybackManager(private val context: Context) {
+class AudioPlaybackManager private constructor(rawContext: Context) {
 
+    private val context: Context = rawContext.applicationContext
     private val prefs = context.getSharedPreferences("tv_music_prefs", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var exoPlayer: ExoPlayer? = null
@@ -124,14 +125,62 @@ class AudioPlaybackManager(private val context: Context) {
     }
 
     init {
-        startProgressTracker()
-        startVisualizerGenerator()
+        ensureActiveSession()
+    }
+
+    fun hasActivePlayback(): Boolean {
+        val player = exoPlayer ?: TvExoPlayerCore.getExistingPlayer()
+        val playerActive = player != null && (player.isPlaying || player.playWhenReady || player.currentMediaItem != null)
+        return _currentTrack.value != null && (_isPlaying.value || playerActive)
+    }
+
+    fun ensureActiveSession() {
+        val existing = exoPlayer ?: TvExoPlayerCore.getExistingPlayer()?.also { shared ->
+            shared.removeListener(playerListener)
+            shared.addListener(playerListener)
+            exoPlayer = shared
+        }
+        if (existing != null) {
+            syncWithPlayer(existing)
+        }
+        if (progressJob?.isActive != true) {
+            startProgressTracker()
+        }
+        if (visualizerJob?.isActive != true) {
+            startVisualizerGenerator()
+        }
+    }
+
+    fun syncWithPlayer(playerOverride: ExoPlayer? = exoPlayer ?: TvExoPlayerCore.getExistingPlayer()) {
+        val player = playerOverride ?: return
+        if (exoPlayer !== player) {
+            player.removeListener(playerListener)
+            player.addListener(playerListener)
+            exoPlayer = player
+        }
+        try {
+            val activePlaying = player.isPlaying || (player.playWhenReady && player.playbackState == Player.STATE_BUFFERING)
+            _isPlaying.value = activePlaying
+            val pos = player.currentPosition.coerceAtLeast(0L)
+            if (pos > 0L || _currentPositionMs.value == 0L) {
+                _currentPositionMs.value = pos
+            }
+            val dur = player.duration
+            if (dur > 0L) {
+                _durationMs.value = dur
+            }
+            if (activePlaying && _backgroundPlaybackEnabled.value && player.currentMediaItem != null) {
+                MusicPlaybackService.ensureStarted(context)
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun ensurePlayer(): ExoPlayer {
         val existing = exoPlayer
         if (existing != null) return existing
         val created = TvExoPlayerCore.getOrCreatePlayer(context).apply {
+            removeListener(playerListener)
             addListener(playerListener)
         }
         exoPlayer = created
@@ -471,12 +520,36 @@ class AudioPlaybackManager(private val context: Context) {
         }
     }
 
+    fun onUiDisconnected() {
+        val player = exoPlayer ?: TvExoPlayerCore.getExistingPlayer()
+        val keepPlayingInBackground = _backgroundPlaybackEnabled.value && (
+            _isPlaying.value ||
+                player?.isPlaying == true ||
+                player?.playWhenReady == true ||
+                (_currentTrack.value != null && player?.currentMediaItem != null)
+            )
+        if (keepPlayingInBackground) {
+            // Pause only visual bar generation while UI is gone; keep playerListener, progressJob, and sleepTimerJob alive!
+            visualizerJob?.cancel()
+            visualizerJob = null
+            if (_isPlaying.value || player?.isPlaying == true || player?.playWhenReady == true) {
+                MusicPlaybackService.ensureStarted(context)
+            }
+            return
+        }
+        release()
+    }
+
     fun release() {
         progressJob?.cancel()
+        progressJob = null
         sleepTimerJob?.cancel()
+        sleepTimerJob = null
         visualizerJob?.cancel()
+        visualizerJob = null
         exoPlayer?.removeListener(playerListener)
         exoPlayer = null
+        MusicPlaybackService.stopService(context)
         TvExoPlayerCore.releaseIfNotBackground()
     }
 
@@ -484,5 +557,14 @@ class AudioPlaybackManager(private val context: Context) {
         private const val KEY_ANTI_HISS_24BIT = "anti_hiss_24bit_enabled"
         private const val KEY_BACKGROUND_PLAYBACK = "background_playback_enabled"
         private const val KEY_KEEP_CPU_AWAKE = "keep_cpu_awake_background"
+
+        @Volatile
+        private var instance: AudioPlaybackManager? = null
+
+        fun getInstance(context: Context): AudioPlaybackManager {
+            return instance ?: synchronized(this) {
+                instance ?: AudioPlaybackManager(context.applicationContext).also { instance = it }
+            }
+        }
     }
 }

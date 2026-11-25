@@ -46,7 +46,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -111,13 +115,6 @@ fun NowPlayingScreen(
     val totalStr = "%02d:%02d".format(totalSeconds / 60, totalSeconds % 60)
 
     val queueListState = rememberLazyListState()
-    LaunchedEffect(currentTrack?.id, displayTracks.size) {
-        val activeId = currentTrack?.id ?: return@LaunchedEffect
-        val idx = displayTracks.indexOfFirst { it.id == activeId }
-        if (idx >= 0) {
-            queueListState.animateScrollToItem(idx)
-        }
-    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -809,6 +806,39 @@ private fun NowPlayingQueueSection(
     modifier: Modifier = Modifier
 ) {
     val style = LocalTvStyle.current
+    var selectedFormat by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("ALL") }
+
+    val formatCounts = remember(tracks) {
+        tracks.groupingBy { it.format.trim().uppercase().ifBlank { "KHÁC" } }.eachCount()
+    }
+    val availableFormats = remember(formatCounts) {
+        val preferredOrder = listOf("FLAC", "WAV", "DSD", "ALAC", "AIFF", "MP3", "AAC", "M4A", "OGG", "OPUS", "WMA")
+        val present = preferredOrder.filter { formatCounts.containsKey(it) } +
+            formatCounts.keys.filter { it !in preferredOrder }.sorted()
+        if (present.isNotEmpty()) present else listOf("FLAC", "WAV", "MP3", "AAC", "OGG")
+    }
+
+    LaunchedEffect(formatCounts) {
+        if (selectedFormat != "ALL" && !formatCounts.containsKey(selectedFormat)) {
+            selectedFormat = "ALL"
+        }
+    }
+
+    val filteredTracks = remember(tracks, selectedFormat) {
+        if (selectedFormat == "ALL") {
+            tracks
+        } else {
+            tracks.filter { it.format.trim().uppercase().ifBlank { "KHÁC" } == selectedFormat }
+        }
+    }
+
+    LaunchedEffect(currentTrack?.id, filteredTracks.size, selectedFormat) {
+        val activeId = currentTrack?.id ?: return@LaunchedEffect
+        val idx = filteredTracks.indexOfFirst { it.id == activeId }
+        if (idx >= 0) {
+            listState.animateScrollToItem(idx)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -820,7 +850,7 @@ private fun NowPlayingQueueSection(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -831,26 +861,87 @@ private fun NowPlayingQueueSection(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Danh sách bài hát (${tracks.size})",
+                    text = "Danh sách (${filteredTracks.size})",
                     color = style.textPrimary,
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
-            val currentIdx = currentTrack?.let { ct -> tracks.indexOfFirst { it.id == ct.id } } ?: -1
+
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val allSelected = selectedFormat == "ALL"
+                Box(
+                    modifier = Modifier
+                        .tvFocusable(
+                            tag = "np_queue_format_all",
+                            shape = RoundedCornerShape(8.dp),
+                            defaultBgColor = if (allSelected) style.accentColor else style.surfaceVariant.copy(alpha = 0.7f),
+                            defaultBorderColor = if (allSelected) style.accentColor else style.borderColor,
+                            onClick = { selectedFormat = "ALL" }
+                        )
+                        .padding(horizontal = 9.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "Tất cả (${tracks.size})",
+                        color = if (allSelected) style.accentContentColor else style.textSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = if (allSelected) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+
+                availableFormats.forEach { fmt ->
+                    val isSelected = selectedFormat == fmt
+                    val count = formatCounts[fmt] ?: 0
+                    val label = if (count > 0) "$fmt ($count)" else fmt
+                    Box(
+                        modifier = Modifier
+                            .tvFocusable(
+                                tag = "np_queue_format_${fmt.lowercase()}",
+                                shape = RoundedCornerShape(8.dp),
+                                defaultBgColor = if (isSelected) style.accentColor else style.surfaceVariant.copy(alpha = 0.7f),
+                                defaultBorderColor = if (isSelected) style.accentColor else style.borderColor,
+                                onClick = { selectedFormat = fmt }
+                            )
+                            .padding(horizontal = 9.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            color = if (isSelected) style.accentContentColor else style.textSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+            }
+
+            val currentIdx = currentTrack?.let { ct -> filteredTracks.indexOfFirst { it.id == ct.id } } ?: -1
             if (currentIdx >= 0) {
                 Text(
-                    text = "Bài ${currentIdx + 1}/${tracks.size}",
+                    text = "${currentIdx + 1}/${filteredTracks.size}",
                     color = style.accentColor,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        if (tracks.isEmpty()) {
+        if (filteredTracks.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -864,7 +955,11 @@ private fun NowPlayingQueueSection(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Chưa có bài hát trong danh sách",
+                        text = if (selectedFormat == "ALL") {
+                            "Chưa có bài hát trong danh sách"
+                        } else {
+                            "Không có bài hát định dạng $selectedFormat"
+                        },
                         color = style.textSecondary,
                         fontSize = 12.sp
                     )
@@ -880,7 +975,7 @@ private fun NowPlayingQueueSection(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 itemsIndexed(
-                    items = tracks,
+                    items = filteredTracks,
                     key = { index, item -> "${index}_${item.id}" }
                 ) { index, track ->
                     val isCurrent = currentTrack?.id == track.id

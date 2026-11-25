@@ -77,6 +77,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (intent?.getBooleanExtra(EXTRA_OPEN_NOW_PLAYING, false) == true) {
+            viewModel.selectTab(TvNavTab.NOW_PLAYING)
+        }
 
         setContent {
             val uiStyle by viewModel.uiStyle.collectAsStateWithLifecycle()
@@ -91,8 +94,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        viewModel.syncPlaybackState()
+        if (intent.getBooleanExtra(EXTRA_OPEN_NOW_PLAYING, false) || viewModel.playbackManager.hasActivePlayback()) {
+            viewModel.selectTab(TvNavTab.NOW_PLAYING)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        viewModel.syncPlaybackState()
         val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_AUDIO
         } else {
@@ -102,6 +115,10 @@ class MainActivity : ComponentActivity() {
         if (granted && viewModel.allTracks.value.isEmpty() && !viewModel.isScanning.value) {
             viewModel.scanLibrary()
         }
+    }
+
+    companion object {
+        const val EXTRA_OPEN_NOW_PLAYING = "extra_open_now_playing"
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {

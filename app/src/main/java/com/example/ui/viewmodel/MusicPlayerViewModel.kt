@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = MusicRepository(application)
-    val playbackManager = AudioPlaybackManager(application)
+    val playbackManager = AudioPlaybackManager.getInstance(application)
 
     // Navigation & Screen State
     private val _currentTab = MutableStateFlow(TvNavTab.FOLDERS)
@@ -244,8 +244,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     init {
+        playbackManager.ensureActiveSession()
+        if (playbackManager.hasActivePlayback()) {
+            _currentTab.value = TvNavTab.NOW_PLAYING
+        }
         scanLibrary()
         startTvCastReceiverSilently()
+    }
+
+    fun syncPlaybackState() {
+        playbackManager.ensureActiveSession()
     }
 
     private fun startTvCastReceiverSilently() {
@@ -602,6 +610,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         super.onCleared()
         stopLanDiscoveryListener()
         localServer.stop()
-        playbackManager.release()
+        playbackManager.onUiDisconnected()
     }
 }

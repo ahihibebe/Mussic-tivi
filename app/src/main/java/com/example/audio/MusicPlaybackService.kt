@@ -42,6 +42,7 @@ class MusicPlaybackService : MediaSessionService() {
 
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(MainActivity.EXTRA_OPEN_NOW_PLAYING, true)
         }
         val pendingFlags = PendingIntent.getActivity(
             this,
@@ -60,6 +61,7 @@ class MusicPlaybackService : MediaSessionService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        isServiceRunning = true
         ensureNotificationChannel()
         try {
             val notification = buildFallbackNotification()
@@ -115,6 +117,7 @@ class MusicPlaybackService : MediaSessionService() {
     private fun buildFallbackNotification(): Notification {
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(MainActivity.EXTRA_OPEN_NOW_PLAYING, true)
         }
         val contentPendingIntent = PendingIntent.getActivity(
             this,

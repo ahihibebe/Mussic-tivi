@@ -71,16 +71,18 @@ object TvExoPlayerCore {
         return player
     }
 
+    fun getExistingPlayer(): ExoPlayer? = sharedPlayer
+
     fun releaseIfNotBackground() {
-        if (backgroundPlaybackEnabled && sharedPlayer?.isPlaying == true) {
+        val existing = sharedPlayer ?: return
+        if (backgroundPlaybackEnabled && (existing.isPlaying || existing.playWhenReady || existing.currentMediaItem != null)) {
             return
         }
-        val player = sharedPlayer ?: return
         sharedPlayer = null
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            player.release()
+            existing.release()
         } else {
-            Handler(Looper.getMainLooper()).post { player.release() }
+            Handler(Looper.getMainLooper()).post { existing.release() }
         }
     }
 
