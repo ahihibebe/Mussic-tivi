@@ -527,7 +527,13 @@ private fun TvRemoteControlCard(
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         placeholder = {
-                            Text("Nhập IP Tivi (vd: 192.168.1.20)", fontSize = 13.sp, color = TextMutedSlate)
+                            Text(
+                                text = "IP Tivi (vd: 192.168.1.20)",
+                                fontSize = 13.sp,
+                                color = TextMutedSlate,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         },
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -542,13 +548,14 @@ private fun TvRemoteControlCard(
                         modifier = Modifier
                             .height(52.dp)
                             .testTag("mobile_btn_connect_tv"),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = SkyBluePrimary,
                             contentColor = Color.White
                         )
                     ) {
-                        Text("Kết nối", fontWeight = FontWeight.Bold)
+                        Text("Kết nối", fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
                 }
             }
@@ -1157,21 +1164,25 @@ private fun LibraryActionRow(
                         .fillMaxWidth()
                         .height(48.dp)
                         .testTag("mobile_btn_rescan"),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.filledTonalButtonColors(
                         containerColor = SkyBlueSoft,
                         contentColor = SkyBlueDeep
                     )
                 ) {
-                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
                     Text(
                         text = when {
                             isScanning -> "Đang quét..."
-                            hasTracksOrScanned -> "Quét lại nhạc"
-                            else -> "Quét nhạc ngay"
+                            hasTracksOrScanned -> "Quét lại"
+                            else -> "Quét nhạc"
                         },
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
+                        softWrap = false,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -1181,8 +1192,9 @@ private fun LibraryActionRow(
                     enabled = isScanning,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(44.dp)
+                        .height(48.dp)
                         .testTag("mobile_btn_stop_scan"),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(
                         width = 1.dp,
@@ -1199,14 +1211,16 @@ private fun LibraryActionRow(
                         imageVector = Icons.Filled.StopCircle,
                         contentDescription = "Dừng quét nhạc",
                         tint = if (isScanning) CrimsonStop else TextMutedSlate,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
                     Text(
                         text = "Dừng quét",
+                        fontSize = 13.sp,
                         color = if (isScanning) CrimsonStop else TextMutedSlate,
                         fontWeight = if (isScanning) FontWeight.Bold else FontWeight.Medium,
                         maxLines = 1,
+                        softWrap = false,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -1222,6 +1236,7 @@ private fun LibraryActionRow(
                         .fillMaxWidth()
                         .height(48.dp)
                         .testTag("mobile_btn_pick_folder"),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     shape = RoundedCornerShape(14.dp),
                     border = BorderStroke(1.dp, SoftSlateBorder),
                     colors = ButtonDefaults.outlinedButtonColors(
@@ -1233,19 +1248,22 @@ private fun LibraryActionRow(
                         Icons.Filled.CreateNewFolder,
                         contentDescription = null,
                         tint = SkyBluePrimary,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
                     Text(
                         text = if (selectedFolders.isNotEmpty()) {
-                            "Chọn thư mục (${selectedFolders.size})"
+                            "Thư mục (${selectedFolders.size})"
                         } else if (savedFolderCount > 0) {
                             "Thư mục ($savedFolderCount)"
                         } else {
                             "Chọn thư mục"
                         },
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
                         color = TextPrimaryDark,
                         maxLines = 1,
+                        softWrap = false,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -1254,8 +1272,9 @@ private fun LibraryActionRow(
                     onClick = onPickFiles,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(44.dp)
+                        .height(48.dp)
                         .testTag("mobile_btn_pick_files"),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(1.dp, SoftSlateBorder),
                     colors = ButtonDefaults.outlinedButtonColors(
@@ -1267,13 +1286,16 @@ private fun LibraryActionRow(
                         Icons.Filled.AudioFile,
                         contentDescription = null,
                         tint = SkyBluePrimary,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
                     Text(
-                        text = "Chọn bài hát lẻ",
+                        text = "Chọn bài lẻ",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
                         color = TextPrimaryDark,
                         maxLines = 1,
+                        softWrap = false,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -1472,23 +1494,35 @@ private fun TrackListHeaderAndSearch(
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Filled.MusicNote,
-                    contentDescription = null,
-                    tint = SkyBluePrimary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.MusicNote,
+                        contentDescription = null,
+                        tint = SkyBluePrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Danh sách nhạc",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimaryDark,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Text(
-                    text = "Danh sách nhạc · Chạm để phát Tivi",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimaryDark
+                    text = "Chạm vào bài hát để phát trực tiếp lên Tivi",
+                    fontSize = 11.sp,
+                    color = TextSecondarySlate,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 24.dp)
                 )
             }
+            Spacer(modifier = Modifier.width(8.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1497,7 +1531,7 @@ private fun TrackListHeaderAndSearch(
                     OutlinedButton(
                         onClick = onRestoreExcludedTracks,
                         modifier = Modifier
-                            .height(32.dp)
+                            .height(34.dp)
                             .testTag("mobile_btn_restore_excluded"),
                         shape = RoundedCornerShape(999.dp),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
@@ -1516,7 +1550,9 @@ private fun TrackListHeaderAndSearch(
                         Text(
                             text = "Khôi phục ($excludedTrackCount)",
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -1528,7 +1564,9 @@ private fun TrackListHeaderAndSearch(
                     },
                     style = MaterialTheme.typography.labelMedium,
                     fontFamily = JetBrainsMonoFamily,
-                    color = SkyBlueDeep
+                    color = SkyBlueDeep,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
         }
@@ -1542,8 +1580,10 @@ private fun TrackListHeaderAndSearch(
             singleLine = true,
             placeholder = {
                 Text(
-                    text = "Tìm tên bài hát, ca sĩ, album...",
-                    color = TextMutedSlate
+                    text = "Tìm bài hát, ca sĩ...",
+                    color = TextMutedSlate,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             },
             leadingIcon = {
@@ -1660,31 +1700,45 @@ private fun EmptyTracksCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondarySlate
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+            ) {
                 if (hasQueryOrFilter) {
-                    FilledTonalButton(onClick = onResetFilter) {
-                        Text("Hiện tất cả")
+                    FilledTonalButton(
+                        onClick = onResetFilter,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("Hiện tất cả", maxLines = 1, softWrap = false, fontSize = 12.sp)
                     }
                 } else if (!hasPermission) {
-                    Button(onClick = onRequestPermission) {
-                        Text("Cấp quyền")
+                    Button(
+                        onClick = onRequestPermission,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("Cấp quyền", maxLines = 1, softWrap = false, fontSize = 12.sp)
                     }
                 } else {
-                    Button(onClick = onRescanMusic) {
-                        Text("Quét nhạc ngay")
+                    Button(
+                        onClick = onRescanMusic,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("Quét nhạc", maxLines = 1, softWrap = false, fontSize = 12.sp)
                     }
                 }
                 OutlinedButton(
                     onClick = onPickFiles,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                     border = BorderStroke(1.dp, SoftSlateBorder)
                 ) {
-                    Text("Chọn file", color = TextPrimaryDark)
+                    Text("Chọn file", color = TextPrimaryDark, maxLines = 1, softWrap = false, fontSize = 12.sp)
                 }
                 OutlinedButton(
                     onClick = onPickFolder,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                     border = BorderStroke(1.dp, SoftSlateBorder)
                 ) {
-                    Text("Thư mục", color = TextPrimaryDark)
+                    Text("Thư mục", color = TextPrimaryDark, maxLines = 1, softWrap = false, fontSize = 12.sp)
                 }
             }
         }
@@ -1739,7 +1793,7 @@ private fun LiveScanStatusBanner(
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = if (isScanning) SkyBlueDeep else EmeraldTextDark,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 if (isScanning && !latestTitle.isNullOrBlank()) {
@@ -1758,12 +1812,19 @@ private fun LiveScanStatusBanner(
                 color = Color.White,
                 border = BorderStroke(1.dp, if (isScanning) SkyBlueSoft else EmeraldBorder)
             ) {
+                val pillText = if (newCount > 0 && (isScanning || newCount < totalFound)) {
+                    "$totalFound bài (+$newCount)"
+                } else {
+                    "$totalFound bài"
+                }
                 Text(
-                    text = if (newCount > 0) "$totalFound bài (+$newCount)" else "$totalFound bài",
+                    text = pillText,
                     fontFamily = JetBrainsMonoFamily,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isScanning) SkyBlueDeep else EmeraldTextDark,
+                    maxLines = 1,
+                    softWrap = false,
                     modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                 )
             }
@@ -1800,12 +1861,12 @@ private fun MobileTrackItemCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onPlayOnTv)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(44.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(SoftSlateVariant)
                     .border(1.dp, SoftSlateBorder, RoundedCornerShape(12.dp)),
@@ -1823,12 +1884,12 @@ private fun MobileTrackItemCard(
                         imageVector = Icons.Filled.Album,
                         contentDescription = null,
                         tint = SkyBluePrimary,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -1849,7 +1910,7 @@ private fun MobileTrackItemCard(
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
@@ -1861,6 +1922,8 @@ private fun MobileTrackItemCard(
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = SkyBlueDeep,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -1876,6 +1939,8 @@ private fun MobileTrackItemCard(
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = EmeraldTextDark,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                             )
                         }
@@ -1883,8 +1948,12 @@ private fun MobileTrackItemCard(
                         Text(
                             text = "${track.bitrate} · ${track.formattedDuration}",
                             fontFamily = JetBrainsMonoFamily,
-                            fontSize = 11.sp,
-                            color = TextMutedSlate
+                            fontSize = 10.sp,
+                            color = TextMutedSlate,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                     }
                 }
