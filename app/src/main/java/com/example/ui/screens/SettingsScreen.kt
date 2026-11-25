@@ -79,6 +79,7 @@ fun SettingsScreen(
     glassBlurRadius: Float,
     currentEqualizer: EqualizerPreset,
     sleepTimerSeconds: Int?,
+    antiHiss24BitEnabled: Boolean = true,
     totalTracksCount: Int,
     totalFoldersCount: Int,
     isScanning: Boolean,
@@ -91,6 +92,7 @@ fun SettingsScreen(
     onClearBackground: () -> Unit,
     onSetEqualizer: (EqualizerPreset) -> Unit,
     onSetSleepTimer: (Int?) -> Unit,
+    onToggleAntiHiss24Bit: (Boolean) -> Unit = {},
     onRefreshScan: () -> Unit,
     onPickStorageFolder: () -> Unit,
     modifier: Modifier = Modifier
@@ -552,6 +554,52 @@ fun SettingsScreen(
                                 text = desc,
                                 color = style.textPrimary,
                                 fontSize = 13.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .tvFocusable(
+                                tag = "settings_btn_anti_hiss_24bit",
+                                shape = RoundedCornerShape(12.dp),
+                                defaultBgColor = if (antiHiss24BitEnabled) style.emeraldBg else style.surfaceVariant,
+                                defaultBorderColor = if (antiHiss24BitEnabled) style.emeraldBorder else style.borderColor,
+                                onClick = { onToggleAntiHiss24Bit(!antiHiss24BitEnabled) }
+                            )
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Chống sôi 24-bit / 48kHz Hi-Res Audio",
+                                color = style.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Tắt Audio Offload phần cứng & chuyển PCM 24-bit/32-bit/Float sang 16-bit sạch nhiễu cho DAC TV",
+                                color = style.textSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(if (antiHiss24BitEnabled) style.emeraldColor else style.surfaceVariant)
+                                .border(1.dp, if (antiHiss24BitEnabled) style.emeraldColor else style.borderColor, RoundedCornerShape(999.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = if (antiHiss24BitEnabled) "ĐANG BẬT" else "ĐANG TẮT",
+                                color = if (antiHiss24BitEnabled) Color.White else style.textSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }

@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -49,7 +50,9 @@ import com.example.model.AppUiStyle
 import com.example.model.TvNavTab
 import com.example.ui.components.NowPlayingMiniBar
 import com.example.ui.components.QrBackgroundDialog
+import com.example.ui.components.TvDirectoryPickerDialog
 import com.example.ui.components.TvSidebar
+import com.example.ui.screens.BackgroundPlayScreen
 import com.example.ui.screens.FolderBrowserScreen
 import com.example.ui.screens.InfoScreen
 import com.example.ui.screens.NowPlayingScreen
@@ -190,6 +193,12 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
     val remoteError by viewModel.remoteError.collectAsStateWithLifecycle()
     val manualServerIp by viewModel.manualServerIp.collectAsStateWithLifecycle()
 
+    val antiHiss24BitEnabled by viewModel.antiHiss24BitEnabled.collectAsStateWithLifecycle()
+    val backgroundPlaybackEnabled by viewModel.backgroundPlaybackEnabled.collectAsStateWithLifecycle()
+    val keepCpuAwakeInBackground by viewModel.keepCpuAwakeInBackground.collectAsStateWithLifecycle()
+
+    var showTvDirPicker by remember { mutableStateOf(false) }
+
     val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         Manifest.permission.READ_MEDIA_AUDIO
     } else {
@@ -211,6 +220,10 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
             viewModel.scanLibrary()
         }
     }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ -> }
 
     // Storage Access Framework folder picker launcher
     val folderPickerLauncher = rememberLauncherForActivityResult(
@@ -253,8 +266,39 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
         }
     }
 
+    fun launchFolderPickerSafely() {
+        try {
+            folderPickerLauncher.launch(null)
+        } catch (_: Exception) {
+            showTvDirPicker = true
+        }
+    }
+
+    fun launchAudioFilesPickerSafely() {
+        try {
+            audioFilesPickerLauncher.launch(arrayOf("audio/*", "application/ogg", "application/octet-stream", "*/*"))
+        } catch (_: Exception) {
+            showTvDirPicker = true
+        }
+    }
+
+    fun launchPhotoPickerSafely() {
+        try {
+            photoPickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            )
+        } catch (_: Exception) {
+            Toast.makeText(context, "TV chưa có trình chọn ảnh — hãy dùng Quét mã QR từ điện thoại!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     LaunchedEffect(Unit) {
-        permissionLauncher.launch(audioPermission)
+        if (!hasAudioPermission) {
+            try {
+                permissionLauncher.launch(audioPermission)
+            } catch (_: Exception) {
+            }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -379,10 +423,8 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 onPlayFolder = { folder, shuffle -> viewModel.playFolder(folder, shuffle) },
                                 onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
                                 onRefreshScan = { viewModel.scanLibrary() },
-                                onPickStorageFolder = { folderPickerLauncher.launch(null) },
-                                onPickAudioFiles = {
-                                    audioFilesPickerLauncher.launch(arrayOf("audio/*", "application/ogg", "application/octet-stream", "*/*"))
-                                },
+                                onPickStorageFolder = { launchFolderPickerSafely() },
+                                onPickAudioFiles = { launchAudioFilesPickerSafely() },
                                 onRequestPermission = { permissionLauncher.launch(audioPermission) }
                             )
                         }
@@ -422,6 +464,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 sleepTimerSeconds = sleepTimerSeconds,
                                 visualizerBands = visualizerBands,
                                 playlist = playlist,
+                                allTracks = allTracks,
                                 coverArtStyle = coverArtStyle,
                                 onSetCoverArtStyle = { viewModel.setCoverArtStyle(it) },
                                 onPlayPause = { viewModel.togglePlayPause() },
@@ -435,7 +478,10 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 onSetEqualizer = { viewModel.setEqualizer(it) },
                                 onSetSleepTimer = { viewModel.setSleepTimer(it) },
                                 onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
-                                onSelectQueueTrack = { track -> viewModel.playTrack(track, playlist) }
+                                onSelectQueueTrack = { track ->
+                                    val queue = playlist.ifEmpty { allTracks }
+                                    viewModel.playTrack(track, queue)
+                                }
                             )
                         }
 
@@ -487,6 +533,40 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                             )
                         }
 
+                        TvNavTab.BACKGROUND_PLAY -> {
+                            BackgroundPlayScreen(
+                                currentTrack = currentTrack,
+                                isPlaying = isPlaying,
+                                backgroundPlaybackEnabled = backgroundPlaybackEnabled,
+                                keepCpuAwake = keepCpuAwakeInBackground,
+                                antiHiss24BitEnabled = antiHiss24BitEnabled,
+                                sleepTimerSeconds = sleepTimerSeconds,
+                                onToggleBackgroundPlayback = { enabled ->
+                                    if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        val granted = ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.POST_NOTIFICATIONS
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                        if (!granted) {
+                                            runCatching {
+                                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                            }
+                                        }
+                                    }
+                                    viewModel.setBackgroundPlaybackEnabled(enabled)
+                                },
+                                onToggleKeepCpuAwake = { viewModel.setKeepCpuAwakeInBackground(it) },
+                                onToggleAntiHiss24Bit = { viewModel.setAntiHiss24BitEnabled(it) },
+                                onSetSleepTimer = { viewModel.setSleepTimer(it) },
+                                onPlayPause = { viewModel.togglePlayPause() },
+                                onSkipPrevious = { viewModel.skipPrevious() },
+                                onSkipNext = { viewModel.skipNext() },
+                                onMinimizeToBackground = {
+                                    (context as? Activity)?.moveTaskToBack(true)
+                                }
+                            )
+                        }
+
                         TvNavTab.SETTINGS -> {
                             SettingsScreen(
                                 uiStyle = uiStyle,
@@ -496,6 +576,7 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 glassBlurRadius = glassBlurRadius,
                                 currentEqualizer = equalizerPreset,
                                 sleepTimerSeconds = sleepTimerSeconds,
+                                antiHiss24BitEnabled = antiHiss24BitEnabled,
                                 totalTracksCount = allTracks.size,
                                 totalFoldersCount = allFolders.size,
                                 isScanning = isScanning,
@@ -504,16 +585,13 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 onSetBackgroundOpacity = { viewModel.setBackgroundOpacity(it) },
                                 onSetGlassBlurRadius = { viewModel.setGlassBlurRadius(it) },
                                 onOpenQrBackground = { viewModel.openQrBackgroundDialog() },
-                                onPickBackgroundImage = {
-                                    photoPickerLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                    )
-                                },
+                                onPickBackgroundImage = { launchPhotoPickerSafely() },
                                 onClearBackground = { viewModel.clearCustomBackground() },
                                 onSetEqualizer = { viewModel.setEqualizer(it) },
                                 onSetSleepTimer = { viewModel.setSleepTimer(it) },
+                                onToggleAntiHiss24Bit = { viewModel.setAntiHiss24BitEnabled(it) },
                                 onRefreshScan = { viewModel.scanLibrary() },
-                                onPickStorageFolder = { folderPickerLauncher.launch(null) }
+                                onPickStorageFolder = { launchFolderPickerSafely() }
                             )
                         }
 
@@ -548,13 +626,20 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                 customBackgroundPath = customBackgroundPath,
                 backgroundOpacity = backgroundOpacity,
                 onOpacityChange = { viewModel.setBackgroundOpacity(it) },
-                onPickLocalImage = {
-                    photoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
+                onPickLocalImage = { launchPhotoPickerSafely() },
                 onClearBackground = { viewModel.clearCustomBackground() },
                 onDismiss = { viewModel.closeQrBackgroundDialog() }
+            )
+        }
+
+        if (showTvDirPicker) {
+            TvDirectoryPickerDialog(
+                onSelectFolderPath = { selectedPath ->
+                    showTvDirPicker = false
+                    Toast.makeText(context, "Đã thêm thư mục: $selectedPath", Toast.LENGTH_SHORT).show()
+                    viewModel.addLocalFolderPath(selectedPath)
+                },
+                onDismiss = { showTvDirPicker = false }
             )
         }
     }

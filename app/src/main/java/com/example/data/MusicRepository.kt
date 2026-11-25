@@ -85,6 +85,7 @@ class MusicRepository(private val context: Context) {
             val result = scanner.scanAll(
                 extraTreeUris = loadSavedTreeUris(),
                 extraFileUris = loadSavedFileUris(),
+                extraLocalPaths = loadLocalFolderPaths(),
                 onProgress = { progress ->
                     val updated = progress.tracks.map { it.copy(isFavorite = favs.contains(it.id)) }
                     _allTracks.value = updated
@@ -141,6 +142,16 @@ class MusicRepository(private val context: Context) {
             .toSet()
     }
 
+    fun addLocalFolderPath(path: String) {
+        val current = prefs.getStringSet("local_folder_paths", emptySet()).orEmpty().toMutableSet()
+        current.add(path)
+        prefs.edit().putStringSet("local_folder_paths", current).apply()
+    }
+
+    private fun loadLocalFolderPaths(): Set<String> {
+        return prefs.getStringSet("local_folder_paths", emptySet()).orEmpty()
+    }
+
     fun toggleFavorite(trackId: String) {
         val currentFavs = _favoriteIds.value.toMutableSet()
         if (currentFavs.contains(trackId)) {
@@ -168,7 +179,9 @@ class MusicRepository(private val context: Context) {
     }
 
     fun getTracksInFolder(folderPath: String): List<AudioTrack> {
-        return _allTracks.value.filter { it.parentDirectory == folderPath }
+        return _allTracks.value.filter {
+            it.parentDirectory.ifEmpty { "Bộ nhớ trong" } == folderPath
+        }
     }
 
     fun getFavoriteTracks(): List<AudioTrack> {

@@ -1,8 +1,10 @@
 package com.example.mobile
 
 import com.example.mobile.model.MobileAudioTrack
+import com.example.mobile.network.TvRemoteClient
 import com.example.mobile.server.MobileHttpMusicServer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -48,5 +50,21 @@ class MobileServerUnitTest {
     fun escapeJson_escapesQuotesAndBackslashes() {
         val escaped = MobileHttpMusicServer.escapeJson("""Song "Remix"\Live""")
         assertEquals("""Song \"Remix\"\\Live""", escaped)
+    }
+
+    @Test
+    fun tvRemoteClient_parsesTvBeaconsAndNormalizesUrls() {
+        assertEquals("http://192.168.1.50:8765", TvRemoteClient.normalizeTvUrl("192.168.1.50"))
+        assertNull(
+            TvRemoteClient.parseTvDiscoveryPacket(
+                "TVMUSIC_DISCOVER|1|http://192.168.1.10:8765|Phone|10|PHONE_SERVER|8765"
+            )
+        )
+        val tv = TvRemoteClient.parseTvDiscoveryPacket(
+            "TVMUSIC_DISCOVER|1|http://192.168.1.50:8765|Sony Bravia|24|TV_PLAYER|8765"
+        )
+        assertNotNull(tv)
+        assertEquals("Sony Bravia", tv!!.deviceName)
+        assertEquals("http://192.168.1.50:8765", tv.url)
     }
 }

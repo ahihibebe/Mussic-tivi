@@ -63,14 +63,25 @@ class MainActivity : ComponentActivity() {
                 MobileServerScreen(
                     uiState = uiState,
                     onToggleServer = viewModel::toggleServer,
-                    onRescanMusic = viewModel::scanMusic,
+                    onRescanMusic = { viewModel.scanMusic(forceRestart = false) },
+                    onStopScan = viewModel::stopScan,
                     onPickFolder = { safFolderLauncher.launch(null) },
+                    onRemoveFolder = viewModel::removeSafFolder,
                     onPickFiles = {
                         safFilesLauncher.launch(arrayOf("audio/*", "application/ogg", "application/octet-stream", "*/*"))
                     },
                     onRequestPermission = { requestAudioPermissionIfNeeded(fromUserClick = true) },
                     onSearchQueryChange = viewModel::updateSearchQuery,
-                    onTogglePreview = viewModel::togglePreview
+                    onSelectFormat = viewModel::selectFormat,
+                    onPlayOnTv = viewModel::playTrackOnTv,
+                    onScanForTvs = viewModel::scanForTvs,
+                    onManualTvIpChange = viewModel::updateManualTvIp,
+                    onConnectToTv = viewModel::connectToTv,
+                    onDisconnectFromTv = viewModel::disconnectFromTv,
+                    onSendTvControl = viewModel::sendTvControl,
+                    onTogglePreview = viewModel::togglePreview,
+                    onRemoveTrack = viewModel::removeTrack,
+                    onRestoreExcludedTracks = viewModel::restoreExcludedTracks
                 )
             }
         }

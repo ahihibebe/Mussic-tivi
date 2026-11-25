@@ -29,44 +29,64 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.WifiFind
 import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -88,6 +108,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.mobile.R
 import com.example.mobile.model.MobileAudioTrack
+import com.example.mobile.network.DiscoveredTvDevice
+import com.example.mobile.network.TvRemoteStatus
 import com.example.mobile.ui.theme.AmberBorder
 import com.example.mobile.ui.theme.AmberNotice
 import com.example.mobile.ui.theme.AmberSoftBg
@@ -111,17 +133,29 @@ import com.example.mobile.ui.theme.TextSecondarySlate
 import com.example.mobile.ui.theme.WhiteCardSurface
 import com.example.mobile.ui.theme.WhitePageBg
 import com.example.mobile.viewmodel.MobileServerUiState
+import com.example.mobile.viewmodel.SelectedFolderItem
 
 @Composable
 fun MobileServerScreen(
     uiState: MobileServerUiState,
     onToggleServer: () -> Unit,
     onRescanMusic: () -> Unit,
+    onStopScan: () -> Unit = {},
     onPickFolder: () -> Unit,
+    onRemoveFolder: (String) -> Unit = {},
     onPickFiles: () -> Unit,
     onRequestPermission: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
-    onTogglePreview: (MobileAudioTrack) -> Unit
+    onSelectFormat: (String) -> Unit = {},
+    onPlayOnTv: (MobileAudioTrack) -> Unit = {},
+    onScanForTvs: () -> Unit = {},
+    onManualTvIpChange: (String) -> Unit = {},
+    onConnectToTv: (String) -> Unit = {},
+    onDisconnectFromTv: () -> Unit = {},
+    onSendTvControl: (String, Long?) -> Unit = { _, _ -> },
+    onTogglePreview: (MobileAudioTrack) -> Unit,
+    onRemoveTrack: (MobileAudioTrack) -> Unit = {},
+    onRestoreExcludedTracks: () -> Unit = {}
 ) {
     var showQrDialogCard by remember { mutableStateOf(false) }
     var copiedBanner by remember { mutableStateOf(false) }
@@ -175,6 +209,21 @@ fun MobileServerScreen(
                     )
                 }
 
+                item(key = "tv_remote_control_card") {
+                    TvRemoteControlCard(
+                        tvStatus = uiState.tvStatus,
+                        discoveredTvs = uiState.discoveredTvs,
+                        isScanningTvs = uiState.isScanningTvs,
+                        manualTvIp = uiState.manualTvIp,
+                        tvMessage = uiState.tvConnectionMessage,
+                        onScanTvs = onScanForTvs,
+                        onManualIpChange = onManualTvIpChange,
+                        onConnectTv = onConnectToTv,
+                        onDisconnectTv = onDisconnectFromTv,
+                        onSendControl = onSendTvControl
+                    )
+                }
+
                 if (!uiState.hasAudioPermission) {
                     item(key = "permission_banner") {
                         PermissionRequiredCard(onRequestPermission = onRequestPermission)
@@ -184,18 +233,14 @@ fun MobileServerScreen(
                 item(key = "actions_row") {
                     LibraryActionRow(
                         isScanning = uiState.isScanning,
+                        hasTracksOrScanned = uiState.hasScannedOnce || uiState.tracks.isNotEmpty(),
                         savedFolderCount = uiState.savedFolderCount,
+                        selectedFolders = uiState.selectedFolders,
                         onRescanMusic = onRescanMusic,
+                        onStopScan = onStopScan,
                         onPickFolder = onPickFolder,
+                        onRemoveFolder = onRemoveFolder,
                         onPickFiles = onPickFiles
-                    )
-                }
-
-                item(key = "tv_guide_card") {
-                    TvConnectionGuideCard(
-                        serverUrl = uiState.serverUrl,
-                        isRunning = uiState.isServerRunning,
-                        activityLog = uiState.activityLog
                     )
                 }
 
@@ -203,8 +248,13 @@ fun MobileServerScreen(
                     TrackListHeaderAndSearch(
                         totalTracks = uiState.tracks.size,
                         filteredCount = uiState.filteredTracks.size,
+                        excludedTrackCount = uiState.excludedTrackCount,
                         searchQuery = uiState.searchQuery,
-                        onSearchQueryChange = onSearchQueryChange
+                        selectedFormat = uiState.selectedFormat,
+                        formatCounts = uiState.formatCounts,
+                        onSearchQueryChange = onSearchQueryChange,
+                        onSelectFormat = onSelectFormat,
+                        onRestoreExcludedTracks = onRestoreExcludedTracks
                     )
                 }
 
@@ -255,8 +305,12 @@ fun MobileServerScreen(
                     item(key = "empty_tracks") {
                         EmptyTracksCard(
                             hasPermission = uiState.hasAudioPermission,
-                            hasQuery = uiState.searchQuery.isNotBlank(),
+                            hasQueryOrFilter = uiState.searchQuery.isNotBlank() || uiState.selectedFormat != "ALL",
                             onRescanMusic = onRescanMusic,
+                            onResetFilter = {
+                                onSearchQueryChange("")
+                                onSelectFormat("ALL")
+                            },
                             onPickFolder = onPickFolder,
                             onPickFiles = onPickFiles,
                             onRequestPermission = onRequestPermission
@@ -267,16 +321,441 @@ fun MobileServerScreen(
                         items = uiState.filteredTracks,
                         key = { it.id }
                     ) { track ->
+                        val isOnTv = uiState.tvStatus.connected &&
+                            (uiState.tvStatus.trackId?.endsWith("_${track.id}") == true ||
+                                uiState.tvStatus.title == track.title)
+                        val isCasting = uiState.castingTrackId == track.id
                         MobileTrackItemCard(
                             track = track,
-                            isPlaying = uiState.previewTrackId == track.id && uiState.isPreviewPlaying,
-                            onTogglePreview = { onTogglePreview(track) }
+                            isPreviewPlaying = uiState.previewTrackId == track.id && uiState.isPreviewPlaying,
+                            isPlayingOnTv = isOnTv,
+                            isCasting = isCasting,
+                            onPlayOnTv = { onPlayOnTv(track) },
+                            onTogglePreview = { onTogglePreview(track) },
+                            onRemoveTrack = { onRemoveTrack(track) }
                         )
                     }
                 }
 
+                item(key = "tv_guide_card") {
+                    TvConnectionGuideCard(
+                        serverUrl = uiState.serverUrl,
+                        isRunning = uiState.isServerRunning,
+                        activityLog = uiState.activityLog
+                    )
+                }
+
                 item(key = "bottom_spacer") {
                     Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TvRemoteControlCard(
+    tvStatus: TvRemoteStatus,
+    discoveredTvs: List<DiscoveredTvDevice>,
+    isScanningTvs: Boolean,
+    manualTvIp: String,
+    tvMessage: String?,
+    onScanTvs: () -> Unit,
+    onManualIpChange: (String) -> Unit,
+    onConnectTv: (String) -> Unit,
+    onDisconnectTv: () -> Unit,
+    onSendControl: (String, Long?) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("mobile_tv_remote_card"),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = WhiteCardSurface),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (tvStatus.connected) SkyBluePrimary.copy(alpha = 0.55f) else SoftSlateBorder
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (tvStatus.connected) SkyBlueSoft else SoftSlateVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (tvStatus.connected) Icons.Filled.CastConnected else Icons.Filled.Tv,
+                            contentDescription = "Điều khiển Tivi",
+                            tint = if (tvStatus.connected) SkyBlueDeep else TextSecondarySlate,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Điều khiển trình phát Tivi",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextPrimaryDark
+                        )
+                        Text(
+                            text = if (tvStatus.connected) {
+                                "Đã kết nối: ${tvStatus.deviceName} · Bấm bài bên dưới để phát thẳng trên TV"
+                            } else {
+                                "Bấm bất kỳ bài hát nào bên dưới để phát trực tiếp lên Tivi"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 12.sp,
+                            color = if (tvStatus.connected) SkyBlueDeep else TextSecondarySlate
+                        )
+                    }
+                }
+
+                if (tvStatus.connected) {
+                    OutlinedButton(
+                        onClick = onDisconnectTv,
+                        modifier = Modifier
+                            .height(36.dp)
+                            .testTag("mobile_btn_disconnect_tv"),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        border = BorderStroke(1.dp, SoftSlateBorder)
+                    ) {
+                        Text("Ngắt", fontSize = 12.sp, color = TextSecondarySlate)
+                    }
+                } else {
+                    FilledTonalButton(
+                        onClick = onScanTvs,
+                        enabled = !isScanningTvs,
+                        modifier = Modifier
+                            .height(38.dp)
+                            .testTag("mobile_btn_find_tv"),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = SkyBlueSoft,
+                            contentColor = SkyBlueDeep
+                        )
+                    ) {
+                        if (isScanningTvs) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = SkyBlueDeep
+                            )
+                        } else {
+                            Icon(Icons.Filled.WifiFind, contentDescription = null, modifier = Modifier.size(16.dp))
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (isScanningTvs) "Đang tìm..." else "Tìm TV", fontSize = 12.sp)
+                    }
+                }
+            }
+
+            if (!tvMessage.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = SkyBlueTint,
+                    border = BorderStroke(1.dp, SkyBlueSoft)
+                ) {
+                    Text(
+                        text = tvMessage,
+                        fontSize = 12.sp,
+                        color = SkyBlueDeep,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Discovered TV devices quick select
+            if (discoveredTvs.isNotEmpty() && !tvStatus.connected) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(discoveredTvs, key = { it.url }) { tv ->
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .clickable { onConnectTv(tv.url) },
+                            shape = RoundedCornerShape(999.dp),
+                            color = SkyBlueTint,
+                            border = BorderStroke(1.dp, SkyBluePrimary.copy(alpha = 0.45f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Filled.Tv, contentDescription = null, tint = SkyBlueDeep, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "${tv.deviceName} (${tv.url.substringAfter("://").substringBefore(":")})",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = SkyBlueDeep
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!tvStatus.connected) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = manualTvIp,
+                        onValueChange = onManualIpChange,
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        placeholder = {
+                            Text("Nhập IP Tivi (vd: 192.168.1.20)", fontSize = 13.sp, color = TextMutedSlate)
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = SkyBluePrimary,
+                            unfocusedBorderColor = SoftSlateBorder,
+                            focusedContainerColor = SoftWhiteCanvas,
+                            unfocusedContainerColor = SoftWhiteCanvas
+                        )
+                    )
+                    Button(
+                        onClick = { onConnectTv(manualTvIp) },
+                        modifier = Modifier
+                            .height(52.dp)
+                            .testTag("mobile_btn_connect_tv"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SkyBluePrimary,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("Kết nối", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // Live TV Now Playing & Transport Controls
+            if (tvStatus.connected) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = SoftWhiteCanvas,
+                    border = BorderStroke(1.dp, SoftSlateBorder)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = tvStatus.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = TextPrimaryDark,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = tvStatus.artist,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontSize = 12.sp,
+                                    color = TextSecondarySlate,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (tvStatus.format.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = SkyBlueSoft
+                                ) {
+                                    Text(
+                                        text = tvStatus.format,
+                                        fontFamily = JetBrainsMonoFamily,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SkyBlueDeep,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Seek Slider
+                        val safeDuration = tvStatus.durationMs.coerceAtLeast(1L)
+                        var isDragging by remember { mutableStateOf(false) }
+                        var dragFraction by remember { mutableFloatStateOf(0f) }
+                        val currentFraction = if (isDragging) {
+                            dragFraction
+                        } else {
+                            (tvStatus.positionMs.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f)
+                        }
+
+                        Column {
+                            Slider(
+                                value = currentFraction,
+                                onValueChange = {
+                                    isDragging = true
+                                    dragFraction = it
+                                },
+                                onValueChangeFinished = {
+                                    val targetMs = (dragFraction * safeDuration).toLong()
+                                    isDragging = false
+                                    onSendControl("seek", targetMs)
+                                },
+                                colors = SliderDefaults.colors(
+                                    thumbColor = SkyBluePrimary,
+                                    activeTrackColor = SkyBluePrimary,
+                                    inactiveTrackColor = SoftSlateBorder
+                                )
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = formatDurationMs(if (isDragging) (dragFraction * safeDuration).toLong() else tvStatus.positionMs),
+                                    fontFamily = JetBrainsMonoFamily,
+                                    fontSize = 11.sp,
+                                    color = TextMutedSlate
+                                )
+                                Text(
+                                    text = formatDurationMs(tvStatus.durationMs),
+                                    fontFamily = JetBrainsMonoFamily,
+                                    fontSize = 11.sp,
+                                    color = TextMutedSlate
+                                )
+                            }
+                        }
+
+                        // Transport buttons (all >= 48.dp touch target)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = { onSendControl("shuffle", null) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("tv_remote_shuffle")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Shuffle,
+                                    contentDescription = "Xáo trộn trên Tivi",
+                                    tint = if (tvStatus.isShuffle) SkyBluePrimary else TextMutedSlate
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { onSendControl("prev", null) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("tv_remote_prev")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.SkipPrevious,
+                                    contentDescription = "Bài trước trên Tivi",
+                                    tint = TextPrimaryDark,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { onSendControl("rewind", null) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("tv_remote_rewind")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Replay10,
+                                    contentDescription = "Tua lùi 10 giây",
+                                    tint = TextPrimaryDark
+                                )
+                            }
+
+                            FilledIconButton(
+                                onClick = { onSendControl("toggle", null) },
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .testTag("tv_remote_play_pause"),
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = SkyBluePrimary,
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = if (tvStatus.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    contentDescription = if (tvStatus.isPlaying) "Tạm dừng Tivi" else "Phát trên Tivi",
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { onSendControl("forward", null) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("tv_remote_forward")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Forward10,
+                                    contentDescription = "Tua tới 10 giây",
+                                    tint = TextPrimaryDark
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { onSendControl("next", null) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("tv_remote_next")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.SkipNext,
+                                    contentDescription = "Bài tiếp theo trên Tivi",
+                                    tint = TextPrimaryDark,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { onSendControl("repeat", null) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("tv_remote_repeat")
+                            ) {
+                                Icon(
+                                    imageVector = if (tvStatus.repeatMode == "ONE") Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                                    contentDescription = "Lặp lại trên Tivi",
+                                    tint = if (tvStatus.repeatMode == "OFF") TextMutedSlate else SkyBluePrimary
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -346,7 +825,7 @@ private fun MobileServerHeader(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = if (isRunning) "ONLINE" else "TẠM TẮT",
+                    text = if (isRunning) "ONLINE" else "CHỜ",
                     style = MaterialTheme.typography.labelMedium,
                     fontFamily = JetBrainsMonoFamily,
                     color = if (isRunning) EmeraldTextDark else TextSecondarySlate
@@ -401,7 +880,7 @@ private fun HeroServerControlCard(
                     )
                 )
                 .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -421,7 +900,7 @@ private fun HeroServerControlCard(
                     )
                     .clickable(onClick = onToggleServer)
                     .testTag("mobile_toggle_server")
-                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -431,7 +910,7 @@ private fun HeroServerControlCard(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(46.dp)
+                            .size(44.dp)
                             .scale(pulseScale)
                             .clip(CircleShape)
                             .background(if (uiState.isServerRunning) EmeraldActive else SkyBluePrimary),
@@ -441,7 +920,7 @@ private fun HeroServerControlCard(
                             imageVector = if (uiState.isServerRunning) Icons.Filled.WifiTethering else Icons.Filled.Wifi,
                             contentDescription = "Server Wi-Fi",
                             tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
@@ -453,11 +932,12 @@ private fun HeroServerControlCard(
                         )
                         Text(
                             text = if (uiState.isServerRunning) {
-                                "Đang phát sóng LAN cho Tivi quét trực tiếp"
+                                "Đang phát sóng LAN cho Tivi stream trực tiếp"
                             } else {
-                                "Bật để TV Music stream thẳng nhạc từ máy này"
+                                "Bật để TV Music quét hoặc nhận bài trực tiếp từ ĐT"
                             },
                             style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 12.sp,
                             color = if (uiState.isServerRunning) EmeraldTextDark else TextSecondarySlate
                         )
                     }
@@ -576,7 +1056,7 @@ private fun HeroServerControlCard(
                 onClick = onToggleServer,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .height(48.dp)
                     .testTag("mobile_primary_server_button"),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -651,89 +1131,255 @@ private fun PermissionRequiredCard(onRequestPermission: () -> Unit) {
 @Composable
 private fun LibraryActionRow(
     isScanning: Boolean,
+    hasTracksOrScanned: Boolean,
     savedFolderCount: Int,
+    selectedFolders: List<SelectedFolderItem>,
     onRescanMusic: () -> Unit,
+    onStopScan: () -> Unit,
     onPickFolder: () -> Unit,
+    onRemoveFolder: (String) -> Unit,
     onPickFiles: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top
         ) {
-            FilledTonalButton(
-                onClick = onRescanMusic,
-                enabled = !isScanning,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp)
-                    .testTag("mobile_btn_rescan"),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = SkyBlueSoft,
-                    contentColor = SkyBlueDeep
-                )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(if (isScanning) "Đang quét..." else "Quét lại nhạc")
+                FilledTonalButton(
+                    onClick = onRescanMusic,
+                    enabled = !isScanning,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("mobile_btn_rescan"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = SkyBlueSoft,
+                        contentColor = SkyBlueDeep
+                    )
+                ) {
+                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = when {
+                            isScanning -> "Đang quét..."
+                            hasTracksOrScanned -> "Quét lại nhạc"
+                            else -> "Quét nhạc ngay"
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onStopScan,
+                    enabled = isScanning,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .testTag("mobile_btn_stop_scan"),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (isScanning) CrimsonStop.copy(alpha = 0.65f) else SoftSlateBorder
+                    ),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (isScanning) CrimsonStop.copy(alpha = 0.10f) else WhiteCardSurface,
+                        contentColor = if (isScanning) CrimsonStop else TextMutedSlate,
+                        disabledContainerColor = SoftWhiteCanvas,
+                        disabledContentColor = TextMutedSlate
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.StopCircle,
+                        contentDescription = "Dừng quét nhạc",
+                        tint = if (isScanning) CrimsonStop else TextMutedSlate,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Dừng quét",
+                        color = if (isScanning) CrimsonStop else TextMutedSlate,
+                        fontWeight = if (isScanning) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
-            OutlinedButton(
-                onClick = onPickFolder,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp)
-                    .testTag("mobile_btn_pick_folder"),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, SoftSlateBorder),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = WhiteCardSurface,
-                    contentColor = TextPrimaryDark
-                )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(
-                    Icons.Filled.CreateNewFolder,
-                    contentDescription = null,
-                    tint = SkyBluePrimary,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = if (savedFolderCount > 0) "Thư mục ($savedFolderCount)" else "Chọn thư mục",
-                    color = TextPrimaryDark,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                OutlinedButton(
+                    onClick = onPickFolder,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("mobile_btn_pick_folder"),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, SoftSlateBorder),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = WhiteCardSurface,
+                        contentColor = TextPrimaryDark
+                    )
+                ) {
+                    Icon(
+                        Icons.Filled.CreateNewFolder,
+                        contentDescription = null,
+                        tint = SkyBluePrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (selectedFolders.isNotEmpty()) {
+                            "Chọn thư mục (${selectedFolders.size})"
+                        } else if (savedFolderCount > 0) {
+                            "Thư mục ($savedFolderCount)"
+                        } else {
+                            "Chọn thư mục"
+                        },
+                        color = TextPrimaryDark,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onPickFiles,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .testTag("mobile_btn_pick_files"),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, SoftSlateBorder),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = WhiteCardSurface,
+                        contentColor = TextPrimaryDark
+                    )
+                ) {
+                    Icon(
+                        Icons.Filled.AudioFile,
+                        contentDescription = null,
+                        tint = SkyBluePrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Chọn bài hát lẻ",
+                        color = TextPrimaryDark,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
 
-        OutlinedButton(
-            onClick = onPickFiles,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .testTag("mobile_btn_pick_files"),
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, SoftSlateBorder),
-            colors = ButtonDefaults.outlinedButtonColors(
-                containerColor = WhiteCardSurface,
-                contentColor = TextPrimaryDark
-            )
-        ) {
-            Icon(
-                Icons.Filled.AudioFile,
-                contentDescription = null,
-                tint = SkyBluePrimary,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "Chọn trực tiếp bài hát (Download / Thư mục bất kỳ)",
-                color = TextPrimaryDark,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+        if (selectedFolders.isNotEmpty()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("mobile_selected_folders_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = WhiteCardSurface),
+                border = BorderStroke(1.dp, SoftSlateBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "THƯ MỤC ĐÃ CHỌN (${selectedFolders.size})",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = SkyBlueDeep
+                        )
+                        Text(
+                            text = "Nhấn \"Bỏ\" để gỡ thư mục",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 11.sp,
+                            color = TextMutedSlate
+                        )
+                    }
+
+                    selectedFolders.forEachIndexed { index, folder ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = SoftWhiteCanvas,
+                            border = BorderStroke(1.dp, SoftSlateBorder)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Folder,
+                                        contentDescription = null,
+                                        tint = SkyBluePrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = folder.displayName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TextPrimaryDark,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                OutlinedButton(
+                                    onClick = { onRemoveFolder(folder.uriString) },
+                                    modifier = Modifier
+                                        .height(36.dp)
+                                        .testTag("mobile_remove_folder_$index"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    border = BorderStroke(1.dp, CrimsonStop.copy(alpha = 0.45f)),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = CrimsonStop.copy(alpha = 0.06f),
+                                        contentColor = CrimsonStop
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "Bỏ thư mục ${folder.displayName}",
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Bỏ",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -764,16 +1410,15 @@ private fun TvConnectionGuideCard(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Cách kết nối trên TV Music",
+                    text = "Hướng dẫn kết nối nhanh",
                     style = MaterialTheme.typography.titleMedium,
                     color = TextPrimaryDark
                 )
             }
             Text(
-                text = "1. Kết nối điện thoại và Tivi cùng một mạng Wi-Fi.\n" +
-                    "2. Bật \"Đặt máy này làm Server nhạc\" ở phía trên.\n" +
-                    "3. Trên Tivi mở TV Music -> tab \"Phát qua Wi-Fi\" -> chọn \"Lấy nhạc trực tiếp từ ĐT\". Tivi sẽ tự tìm thấy máy này" +
-                    if (isRunning && !serverUrl.isNullOrBlank()) " (hoặc nhập $serverUrl)." else ".",
+                text = "• Chạm trực tiếp vào bài hát để phát ngay lên Tivi qua cùng Wi-Fi.\n" +
+                    "• Hoặc mở TV Music -> tab \"Phát qua Wi-Fi\" -> \"Lấy nhạc trực tiếp từ ĐT\"" +
+                    if (isRunning && !serverUrl.isNullOrBlank()) " ($serverUrl)." else ".",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondarySlate
             )
@@ -816,8 +1461,13 @@ private fun TvConnectionGuideCard(
 private fun TrackListHeaderAndSearch(
     totalTracks: Int,
     filteredCount: Int,
+    excludedTrackCount: Int,
     searchQuery: String,
-    onSearchQueryChange: (String) -> Unit
+    selectedFormat: String,
+    formatCounts: Map<String, Int>,
+    onSearchQueryChange: (String) -> Unit,
+    onSelectFormat: (String) -> Unit,
+    onRestoreExcludedTracks: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
@@ -834,17 +1484,53 @@ private fun TrackListHeaderAndSearch(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Kho nhạc chia sẻ",
-                    style = MaterialTheme.typography.titleLarge,
+                    text = "Danh sách nhạc · Chạm để phát Tivi",
+                    style = MaterialTheme.typography.titleMedium,
                     color = TextPrimaryDark
                 )
             }
-            Text(
-                text = if (searchQuery.isBlank()) "$totalTracks bài" else "$filteredCount / $totalTracks bài",
-                style = MaterialTheme.typography.labelMedium,
-                fontFamily = JetBrainsMonoFamily,
-                color = SkyBlueDeep
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (excludedTrackCount > 0) {
+                    OutlinedButton(
+                        onClick = onRestoreExcludedTracks,
+                        modifier = Modifier
+                            .height(32.dp)
+                            .testTag("mobile_btn_restore_excluded"),
+                        shape = RoundedCornerShape(999.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        border = BorderStroke(1.dp, SkyBluePrimary.copy(alpha = 0.45f)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = SkyBlueTint,
+                            contentColor = SkyBlueDeep
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Restore,
+                            contentDescription = "Khôi phục bài đã bỏ",
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Khôi phục ($excludedTrackCount)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                Text(
+                    text = if (searchQuery.isBlank() && selectedFormat == "ALL") {
+                        "$totalTracks bài"
+                    } else {
+                        "$filteredCount / $totalTracks bài"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    fontFamily = JetBrainsMonoFamily,
+                    color = SkyBlueDeep
+                )
+            }
         }
 
         OutlinedTextField(
@@ -856,7 +1542,7 @@ private fun TrackListHeaderAndSearch(
             singleLine = true,
             placeholder = {
                 Text(
-                    text = "Tìm tên bài hát, ca sĩ, định dạng...",
+                    text = "Tìm tên bài hát, ca sĩ, album...",
                     color = TextMutedSlate
                 )
             },
@@ -880,14 +1566,59 @@ private fun TrackListHeaderAndSearch(
                 unfocusedTextColor = TextPrimaryDark
             )
         )
+
+        // Format classification tabs above the song list
+        val orderedFormats = remember(formatCounts) {
+            val baseOrder = listOf("ALL", "FLAC", "WAV", "MP3", "M4A", "AAC", "OGG", "OPUS", "WMA", "MIDI")
+            val presentExtras = formatCounts.keys.filter { it !in baseOrder }.sorted()
+            val combined = (baseOrder + presentExtras).filter { fmt ->
+                fmt == "ALL" || (formatCounts[fmt] ?: 0) > 0
+            }
+            combined
+        }
+
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("mobile_format_tabs"),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(orderedFormats, key = { it }) { fmt ->
+                val count = formatCounts[fmt] ?: 0
+                val isSelected = selectedFormat == fmt
+                val label = if (fmt == "ALL") "Tất cả ($count)" else "$fmt ($count)"
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .clickable { onSelectFormat(fmt) }
+                        .testTag("mobile_format_tab_$fmt"),
+                    shape = RoundedCornerShape(999.dp),
+                    color = if (isSelected) SkyBluePrimary else WhiteCardSurface,
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (isSelected) SkyBluePrimary else SoftSlateBorder
+                    )
+                ) {
+                    Text(
+                        text = label,
+                        fontFamily = JetBrainsMonoFamily,
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) Color.White else TextSecondarySlate,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                    )
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun EmptyTracksCard(
     hasPermission: Boolean,
-    hasQuery: Boolean,
+    hasQueryOrFilter: Boolean,
     onRescanMusic: () -> Unit,
+    onResetFilter: () -> Unit,
     onPickFolder: () -> Unit,
     onPickFiles: () -> Unit,
     onRequestPermission: () -> Unit
@@ -913,30 +1644,34 @@ private fun EmptyTracksCard(
             )
             Text(
                 text = when {
-                    hasQuery -> "Không tìm thấy bài hát khớp từ khóa"
+                    hasQueryOrFilter -> "Không có bài hát thuộc mục lọc hiện tại"
                     !hasPermission -> "Chưa có quyền truy cập kho nhạc"
-                    else -> "Chưa tìm thấy file nhạc nào trên máy"
+                    else -> "Chưa có danh sách nhạc đã lưu"
                 },
                 style = MaterialTheme.typography.titleMedium,
                 color = TextPrimaryDark
             )
             Text(
-                text = if (!hasPermission) {
-                    "Nhấn Cấp quyền hoặc Chọn trực tiếp bài hát trong Download."
-                } else {
-                    "Hãy bấm Quét lại hoặc Chọn trực tiếp bài hát / Chọn thư mục để thêm nhạc."
+                text = when {
+                    hasQueryOrFilter -> "Nhấn Hiện tất cả để xem toàn bộ bài hát."
+                    !hasPermission -> "Nhấn Cấp quyền hoặc Chọn trực tiếp bài hát trong Download."
+                    else -> "Nhấn \"Quét nhạc ngay\" một lần, danh sách sẽ được lưu lại vĩnh viễn."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondarySlate
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!hasPermission) {
+                if (hasQueryOrFilter) {
+                    FilledTonalButton(onClick = onResetFilter) {
+                        Text("Hiện tất cả")
+                    }
+                } else if (!hasPermission) {
                     Button(onClick = onRequestPermission) {
                         Text("Cấp quyền")
                     }
                 } else {
-                    FilledTonalButton(onClick = onRescanMusic) {
-                        Text("Quét lại")
+                    Button(onClick = onRescanMusic) {
+                        Text("Quét nhạc ngay")
                     }
                 }
                 OutlinedButton(
@@ -1000,7 +1735,7 @@ private fun LiveScanStatusBanner(
                     text = if (isScanning) {
                         stageText.ifBlank { "Đang quét kho nhạc..." }
                     } else {
-                        summary ?: "Đã quét xong ($totalFound bài hát)"
+                        summary ?: "Đã lưu ($totalFound bài hát)"
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = if (isScanning) SkyBlueDeep else EmeraldTextDark,
@@ -1039,27 +1774,32 @@ private fun LiveScanStatusBanner(
 @Composable
 private fun MobileTrackItemCard(
     track: MobileAudioTrack,
-    isPlaying: Boolean,
-    onTogglePreview: () -> Unit
+    isPreviewPlaying: Boolean,
+    isPlayingOnTv: Boolean,
+    isCasting: Boolean,
+    onPlayOnTv: () -> Unit,
+    onTogglePreview: () -> Unit,
+    onRemoveTrack: () -> Unit
 ) {
+    val active = isPlayingOnTv || isCasting
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("mobile_track_${track.id}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isPlaying) SkyBlueTint else WhiteCardSurface
+            containerColor = if (active) SkyBlueTint else if (isPreviewPlaying) EmeraldSoftBg else WhiteCardSurface
         ),
         border = BorderStroke(
-            width = 1.dp,
-            color = if (isPlaying) SkyBluePrimary.copy(alpha = 0.65f) else SoftSlateBorder
+            width = if (active) 1.5.dp else 1.dp,
+            color = if (active) SkyBluePrimary else if (isPreviewPlaying) EmeraldBorder else SoftSlateBorder
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isPlaying) 3.dp else 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (active) 3.dp else 1.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onTogglePreview)
+                .clickable(onClick = onPlayOnTv)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1094,7 +1834,7 @@ private fun MobileTrackItemCard(
                 Text(
                     text = track.title,
                     style = MaterialTheme.typography.titleMedium,
-                    color = if (isPlaying) SkyBlueDeep else TextPrimaryDark,
+                    color = if (active) SkyBlueDeep else TextPrimaryDark,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1124,12 +1864,29 @@ private fun MobileTrackItemCard(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
-                    Text(
-                        text = "${track.bitrate} · ${track.formattedDuration}",
-                        fontFamily = JetBrainsMonoFamily,
-                        fontSize = 11.sp,
-                        color = TextMutedSlate
-                    )
+                    if (isPlayingOnTv) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = EmeraldSoftBg,
+                            border = BorderStroke(1.dp, EmeraldBorder)
+                        ) {
+                            Text(
+                                text = "PHÁT TRÊN TV",
+                                fontFamily = JetBrainsMonoFamily,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldTextDark,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "${track.bitrate} · ${track.formattedDuration}",
+                            fontFamily = JetBrainsMonoFamily,
+                            fontSize = 11.sp,
+                            color = TextMutedSlate
+                        )
+                    }
                 }
             }
 
@@ -1140,11 +1897,32 @@ private fun MobileTrackItemCard(
                     .testTag("mobile_preview_${track.id}")
             ) {
                 Icon(
-                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (isPlaying) "Tạm dừng nghe thử" else "Nghe thử bài hát",
-                    tint = if (isPlaying) SkyBluePrimary else TextPrimaryDark
+                    imageVector = if (isPreviewPlaying) Icons.Filled.Pause else Icons.Filled.Headphones,
+                    contentDescription = if (isPreviewPlaying) "Tạm dừng nghe thử" else "Nghe thử trên điện thoại",
+                    tint = if (isPreviewPlaying) EmeraldActive else TextSecondarySlate
+                )
+            }
+
+            IconButton(
+                onClick = onRemoveTrack,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("mobile_remove_track_${track.id}")
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.DeleteOutline,
+                    contentDescription = "Bỏ bài hát khỏi danh sách đã thêm",
+                    tint = CrimsonStop
                 )
             }
         }
     }
+}
+
+private fun formatDurationMs(ms: Long): String {
+    if (ms <= 0L) return "0:00"
+    val totalSec = ms / 1000L
+    val mins = totalSec / 60L
+    val secs = totalSec % 60L
+    return "%d:%02d".format(mins, secs)
 }

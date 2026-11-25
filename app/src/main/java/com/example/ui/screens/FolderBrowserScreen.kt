@@ -373,7 +373,7 @@ private fun FolderOverviewView(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(folders) { folder ->
+                items(folders, key = { it.path }) { folder ->
                     FolderCard(
                         folder = folder,
                         onOpen = { onOpenFolder(folder) }
@@ -395,7 +395,7 @@ private fun FolderCard(
         modifier = Modifier
             .fillMaxWidth()
             .tvFocusable(
-                tag = "folder_card_${folder.name.hashCode()}",
+                tag = "folder_card_${folder.path.hashCode()}",
                 shape = RoundedCornerShape(14.dp),
                 scaleUpFactor = 1.02f,
                 onClick = onOpen
@@ -577,22 +577,83 @@ private fun FolderDetailView(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        LazyColumn(
-            contentPadding = PaddingValues(bottom = 90.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            itemsIndexed(tracks) { index, track ->
-                val isCurrentlyPlaying = currentTrack?.id == track.id
-                TrackRowItem(
-                    index = index + 1,
-                    track = track,
-                    isCurrent = isCurrentlyPlaying,
-                    isPlaying = isCurrentlyPlaying && isPlaying,
-                    coverArtStyle = coverArtStyle,
-                    onPlay = { onPlayTrack(track) },
-                    onToggleFavorite = { onToggleFavorite(track.id) }
-                )
+        if (tracks.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.FolderOpen,
+                        contentDescription = null,
+                        tint = style.textMuted,
+                        modifier = Modifier.size(52.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Không có file nhạc khả dụng trong thư mục này",
+                        color = style.textPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Nhấn Quay lại để chọn thư mục khác",
+                        color = style.textSecondary,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier
+                            .tvFocusable(
+                                tag = "btn_empty_folder_back",
+                                shape = RoundedCornerShape(10.dp),
+                                defaultBgColor = style.accentColor,
+                                defaultBorderColor = style.accentColor,
+                                onClick = onBack
+                            )
+                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = null,
+                            tint = style.accentContentColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Quay lại danh sách thư mục",
+                            color = style.accentContentColor,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(bottom = 90.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                itemsIndexed(
+                    items = tracks,
+                    key = { index, track -> "${index}_${track.id}" }
+                ) { index, track ->
+                    val isCurrentlyPlaying = currentTrack?.id == track.id
+                    TrackRowItem(
+                        index = index + 1,
+                        track = track,
+                        isCurrent = isCurrentlyPlaying,
+                        isPlaying = isCurrentlyPlaying && isPlaying,
+                        coverArtStyle = coverArtStyle,
+                        onPlay = { onPlayTrack(track) },
+                        onToggleFavorite = { onToggleFavorite(track.id) }
+                    )
+                }
             }
         }
     }

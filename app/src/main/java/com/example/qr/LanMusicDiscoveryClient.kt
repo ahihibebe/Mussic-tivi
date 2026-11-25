@@ -156,7 +156,10 @@ object LanMusicDiscoveryClient {
                     if (ownIp != null && senderIp == ownIp) continue
                     val msg = String(packet.data, 0, packet.length, StandardCharsets.UTF_8)
                     val parsed = parseDiscoveryPacket(msg)
-                    if (parsed != null && (ownIp == null || !parsed.url.contains("://$ownIp:"))) {
+                    if (parsed != null &&
+                        parsed.role == "PHONE_SERVER" &&
+                        (ownIp == null || !parsed.url.contains("://$ownIp:"))
+                    ) {
                         onServerDiscovered(parsed)
                     }
                 } catch (ignored: Exception) {
@@ -218,11 +221,13 @@ object LanMusicDiscoveryClient {
             conn.disconnect()
             val dto = serverInfoAdapter.fromJson(body) ?: return@withContext null
             if (dto.app != "TVMusic") return@withContext null
+            val role = dto.role ?: "PHONE_SERVER"
+            if (role != "PHONE_SERVER") return@withContext null
             DiscoveredPhoneServer(
                 url = baseUrl,
                 deviceName = dto.deviceName?.ifBlank { null } ?: baseUrl.substringAfter("://"),
                 tracksCount = dto.tracksCount,
-                role = dto.role ?: "PHONE_SERVER"
+                role = role
             )
         } catch (ignored: Exception) {
             null

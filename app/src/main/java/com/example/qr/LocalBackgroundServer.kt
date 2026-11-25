@@ -42,7 +42,26 @@ data class TvPlaybackSnapshot(
     val format: String = "",
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    val isShuffle: Boolean = false,
+    val repeatMode: String = "ALL",
+    val deviceName: String = listOfNotNull(
+        Build.MANUFACTURER?.replaceFirstChar { it.uppercase() },
+        Build.MODEL
+    ).joinToString(" ").trim().ifBlank { "Android TV" }
+)
+
+data class RemoteCastTrackRequest(
+    val id: String,
+    val streamUrl: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val format: String,
+    val bitrate: String,
+    val durationMs: Long,
+    val coverUrl: String?,
+    val queueTracks: List<RemoteCastTrackRequest> = emptyList()
 )
 
 class LocalBackgroundServer(
@@ -52,6 +71,7 @@ class LocalBackgroundServer(
     private val getRole: () -> WifiMusicRole = { WifiMusicRole.TV_WEB_HUB },
     private val getTvStatus: () -> TvPlaybackSnapshot = { TvPlaybackSnapshot() },
     private val onPlayTrackOnTv: (String) -> Unit = {},
+    private val onPlayRemoteTrackOnTv: (RemoteCastTrackRequest) -> Unit = {},
     private val onTvControl: (String) -> Unit = {},
     private val onAudioUploaded: (File, Boolean) -> Unit = { _, _ -> },
     private val onImageUploaded: (String) -> Unit,
@@ -106,9 +126,12 @@ class LocalBackgroundServer(
 
         broadcastJob = scope.launch {
             while (isActive && !socket.isClosed) {
-                if (getRole() == WifiMusicRole.PHONE_SERVER_HOST) {
-                    sendDiscoveryBeacon(url, port, getTracks().size)
+                val beaconRole = if (getRole() == WifiMusicRole.PHONE_SERVER_HOST) {
+                    "PHONE_SERVER"
+                } else {
+                    "TV_PLAYER"
                 }
+                sendDiscoveryBeacon(url, port, getTracks().size, beaconRole)
                 delay(1800L)
             }
         }
@@ -129,13 +152,13 @@ class LocalBackgroundServer(
         serverUrl = null
     }
 
-    private fun sendDiscoveryBeacon(url: String, port: Int, tracksCount: Int) {
+    private fun sendDiscoveryBeacon(url: String, port: Int, tracksCount: Int, roleTag: String) {
         try {
             val deviceName = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}"
                 .replace("|", " ")
                 .trim()
-                .ifBlank { "Android Phone" }
-            val payload = "TVMUSIC_DISCOVER|1|$url|$deviceName|$tracksCount|PHONE_SERVER|$port"
+                .ifBlank { if (roleTag == "PHONE_SERVER") "Android Phone" else "Android TV" }
+            val payload = "TVMUSIC_DISCOVER|1|$url|$deviceName|$tracksCount|$roleTag|$port"
             val bytes = payload.toByteArray(StandardCharsets.UTF_8)
             DatagramSocket().use { udp ->
                 udp.broadcast = true
@@ -210,10 +233,11 @@ class LocalBackgroundServer(
 
                     method == "GET" && path == "/api/server-info" -> {
                         val deviceName = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}".trim()
-                        val roleStr = if (getRole() == WifiMusicRole.PHONE_SERVER_HOST) "PHONE_SERVER" else "TV_HUB"
+                        val roleStr = if (getRole() == WifiMusicRole.PHONE_SERVER_HOST) "PHONE_SERVER" else "TV_PLAYER"
                         val port = serverSocket?.localPort ?: 8765
                         val url = serverUrl ?: ""
-                        val json = """{"app":"TVMusic","deviceName":"${escapeJson(deviceName)}","role":"$roleStr","tracksCount":${getTracks().size},"port":$port,"url":"${escapeJson(url)}"}"""
+                        val status = getTvStatus()
+                        val json = """{"app":"TVMusic","deviceName":"${escapeJson(deviceName)}","role":"$roleStr","tracksCount":${getTracks().size},"port":$port,"url":"${escapeJson(url)}","nowPlayingTitle":"${escapeJson(status.title)}"}"""
                         sendResponse(
                             output,
                             200,
@@ -263,10 +287,38 @@ class LocalBackgroundServer(
                         }
                     }
 
+                    method == "POST" && path == "/api/tv/play-url" -> {
+                        val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
+                        if (contentLength <= 0 || contentLength > 2 * 1024 * 1024) {
+                            sendJsonError(output, 400, "Thiếu thông tin bài hát")
+                            return
+                        }
+                        val bodyBytes = readExactBytes(input, contentLength)
+                        val bodyText = String(bodyBytes, StandardCharsets.UTF_8)
+                        val req = parseRemoteCastRequest(bodyText)
+                        if (req == null || req.streamUrl.isBlank()) {
+                            sendJsonError(output, 400, "URL phát nhạc không hợp lệ")
+                        } else {
+                            onPlayRemoteTrackOnTv(req)
+                            onClientActivity("Điện thoại phát trực tiếp lên TV: ${req.title}")
+                            sendJsonOk(output, "Đang phát trên TV: ${req.title}")
+                        }
+                    }
+
                     method == "POST" && path == "/api/tv/control" -> {
                         val action = queryParams["action"].orEmpty()
-                        if (action in setOf("toggle", "next", "prev")) {
-                            onTvControl(action)
+                        val allowed = setOf(
+                            "toggle", "play", "pause", "next", "prev",
+                            "forward", "rewind", "shuffle", "repeat", "seek"
+                        )
+                        if (action in allowed) {
+                            val command = if (action == "seek") {
+                                val pos = queryParams["positionMs"]?.toLongOrNull() ?: 0L
+                                "seek:$pos"
+                            } else {
+                                action
+                            }
+                            onTvControl(command)
                             sendJsonOk(output, "Đã gửi lệnh điều khiển TV")
                         } else {
                             sendJsonError(output, 400, "Lệnh không hợp lệ")
@@ -888,6 +940,50 @@ class LocalBackgroundServer(
             return "{\"coverStyle\":\"${coverArtStyle.name}\",\"tracksCount\":$tracksCount,\"tvStatus\":${buildTvStatusObj(tvStatus)}}"
         }
 
+        private fun parseRemoteCastRequest(jsonText: String): RemoteCastTrackRequest? {
+            return try {
+                val obj = org.json.JSONObject(jsonText)
+                val queueArr = obj.optJSONArray("queue")
+                val queueList = mutableListOf<RemoteCastTrackRequest>()
+                if (queueArr != null) {
+                    for (i in 0 until queueArr.length()) {
+                        val item = queueArr.optJSONObject(i) ?: continue
+                        val url = item.optString("streamUrl", "")
+                        if (url.isBlank()) continue
+                        queueList.add(
+                            RemoteCastTrackRequest(
+                                id = item.optString("id", "remote_${url.hashCode()}"),
+                                streamUrl = url,
+                                title = item.optString("title", "Bài hát từ điện thoại"),
+                                artist = item.optString("artist", "Điện thoại"),
+                                album = item.optString("album", "Mobile Server WiFi"),
+                                format = item.optString("format", "MP3"),
+                                bitrate = item.optString("bitrate", "Wi-Fi Stream"),
+                                durationMs = item.optLong("durationMs", 0L),
+                                coverUrl = item.optString("coverUrl", "").takeIf { it.isNotBlank() }
+                            )
+                        )
+                    }
+                }
+                val streamUrl = obj.optString("streamUrl", "")
+                if (streamUrl.isBlank()) return null
+                RemoteCastTrackRequest(
+                    id = obj.optString("id", "remote_${streamUrl.hashCode()}"),
+                    streamUrl = streamUrl,
+                    title = obj.optString("title", "Bài hát từ điện thoại"),
+                    artist = obj.optString("artist", "Điện thoại"),
+                    album = obj.optString("album", "Mobile Server WiFi"),
+                    format = obj.optString("format", "MP3"),
+                    bitrate = obj.optString("bitrate", "Wi-Fi Stream"),
+                    durationMs = obj.optLong("durationMs", 0L),
+                    coverUrl = obj.optString("coverUrl", "").takeIf { it.isNotBlank() },
+                    queueTracks = queueList
+                )
+            } catch (_: Exception) {
+                null
+            }
+        }
+
         private fun buildTvStatusObj(tvStatus: TvPlaybackSnapshot): String {
             return buildString {
                 append('{')
@@ -898,10 +994,14 @@ class LocalBackgroundServer(
                 }
                 append("\"title\":\"${escapeJson(tvStatus.title)}\",")
                 append("\"artist\":\"${escapeJson(tvStatus.artist)}\",")
+                append("\"album\":\"${escapeJson(tvStatus.album)}\",")
                 append("\"format\":\"${escapeJson(tvStatus.format)}\",")
                 append("\"isPlaying\":${tvStatus.isPlaying},")
                 append("\"positionMs\":${tvStatus.positionMs},")
-                append("\"durationMs\":${tvStatus.durationMs}")
+                append("\"durationMs\":${tvStatus.durationMs},")
+                append("\"isShuffle\":${tvStatus.isShuffle},")
+                append("\"repeatMode\":\"${escapeJson(tvStatus.repeatMode)}\",")
+                append("\"deviceName\":\"${escapeJson(tvStatus.deviceName)}\"")
                 append('}')
             }
         }

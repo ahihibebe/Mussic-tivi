@@ -1,5 +1,8 @@
 package com.example
 
+import androidx.media3.common.C
+import androidx.media3.common.audio.AudioProcessor
+import com.example.audio.CleanHiResPcmAudioProcessor
 import com.example.model.AppUiStyle
 import com.example.model.AudioTrack
 import com.example.model.CoverArtStyle
@@ -9,6 +12,8 @@ import com.example.qr.LanMusicDiscoveryClient
 import com.example.qr.LocalBackgroundServer
 import com.example.qr.TvPlaybackSnapshot
 import com.example.ui.theme.buildTvStyleTokens
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -149,5 +154,31 @@ class ExampleUnitTest {
     assertEquals("Acoustic Live", remote.title)
     assertEquals("http://192.168.1.25:8765/api/stream?id=ms_99", remote.contentUri)
     assertEquals("http://192.168.1.25:8765/api/cover?id=ms_99", remote.albumArtUri)
+  }
+
+  @Test
+  fun cleanHiResPcmProcessorConverts24Bit48KhzTo16BitCleanly() {
+    val processor = CleanHiResPcmAudioProcessor()
+    val inFormat = AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_24BIT)
+    val outFormat = processor.configure(inFormat)
+    processor.flush()
+
+    assertTrue(processor.isActive)
+    assertEquals(48000, outFormat.sampleRate)
+    assertEquals(2, outFormat.channelCount)
+    assertEquals(C.ENCODING_PCM_16BIT, outFormat.encoding)
+
+    // Two 24-bit little-endian samples: +max (0x7FFFFF) and -half (0xC00000)
+    val input = ByteBuffer.allocateDirect(6).order(ByteOrder.nativeOrder()).apply {
+      put(0xFF.toByte()); put(0xFF.toByte()); put(0x7F.toByte())
+      put(0x00.toByte()); put(0x00.toByte()); put(0xC0.toByte())
+      flip()
+    }
+    processor.queueInput(input)
+    val output = processor.output
+    assertEquals(4, output.remaining())
+    assertEquals(32767.toShort(), output.short)
+    assertEquals((-16384).toShort(), output.short)
+    assertTrue(TvNavTab.entries.contains(TvNavTab.BACKGROUND_PLAY))
   }
 }

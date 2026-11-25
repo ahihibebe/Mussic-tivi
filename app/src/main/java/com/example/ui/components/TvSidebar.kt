@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
@@ -178,6 +179,7 @@ fun TvSidebar(
                     TvNavTab.FOLDERS -> Icons.Default.Folder
                     TvNavTab.ALL_SONGS -> Icons.Default.LibraryMusic
                     TvNavTab.NOW_PLAYING -> Icons.Default.Album
+                    TvNavTab.BACKGROUND_PLAY -> Icons.Default.NightsStay
                     TvNavTab.PLAYLISTS -> Icons.Default.Favorite
                     TvNavTab.WIFI_PHONE -> Icons.Default.Wifi
                     TvNavTab.SETTINGS -> Icons.Default.Tune
@@ -188,6 +190,7 @@ fun TvSidebar(
                     isSelected -> style.accentColor
                     tab == TvNavTab.PLAYLISTS -> style.redColor
                     tab == TvNavTab.FOLDERS -> style.amberColor
+                    tab == TvNavTab.BACKGROUND_PLAY -> style.accentColor
                     tab == TvNavTab.WIFI_PHONE -> style.emeraldColor
                     tab == TvNavTab.INFO -> style.emeraldColor
                     else -> style.textSecondary
@@ -255,6 +258,7 @@ fun TvSidebar(
                         )
 
                         if ((tab == TvNavTab.NOW_PLAYING && isPlaying) ||
+                            (tab == TvNavTab.BACKGROUND_PLAY && isPlaying) ||
                             (tab == TvNavTab.WIFI_PHONE && isWifiServerRunning)
                         ) {
                             Box(

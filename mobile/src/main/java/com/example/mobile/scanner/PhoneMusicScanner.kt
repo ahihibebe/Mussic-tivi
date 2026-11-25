@@ -2,8 +2,6 @@ package com.example.mobile.scanner
 
 import android.content.ContentUris
 import android.content.Context
-import android.media.MediaMetadataRetriever
-import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -12,9 +10,10 @@ import android.provider.MediaStore
 import android.util.Log
 import com.example.mobile.model.MobileAudioTrack
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
 import java.util.Locale
 
 data class MobileScanProgress(
@@ -39,21 +38,31 @@ class PhoneMusicScanner(private val context: Context) {
     suspend fun scanAll(
         extraTreeUris: Set<Uri> = emptySet(),
         extraFileUris: Set<Uri> = emptySet(),
+        excludedKeys: Set<String> = emptySet(),
         onProgress: ((MobileScanProgress) -> Unit)? = null
     ): List<MobileAudioTrack> = withContext(Dispatchers.IO) {
         val tracks = mutableListOf<MobileAudioTrack>()
         val seenKeys = mutableSetOf<String>()
         val seenFingerprints = mutableSetOf<String>()
+        val folderCoverCache = mutableMapOf<String, String?>()
         var lastEmitTime = 0L
+
+        fun isExcluded(track: MobileAudioTrack): Boolean {
+            if (excludedKeys.isEmpty()) return false
+            if (excludedKeys.contains(track.id)) return true
+            if (track.filePath.isNotBlank() && excludedKeys.contains(track.filePath)) return true
+            if (!track.contentUri.isNullOrBlank() && excludedKeys.contains(track.contentUri)) return true
+            return false
+        }
 
         fun emitProgress(stage: String, latestTitle: String?, force: Boolean = false) {
             if (onProgress == null) return
             val now = System.currentTimeMillis()
-            if (force || now - lastEmitTime >= 120L) {
+            if (force || now - lastEmitTime >= 450L) {
                 lastEmitTime = now
                 onProgress(
                     MobileScanProgress(
-                        tracks = tracks.sortedBy { it.title.lowercase(Locale.ROOT) },
+                        tracks = tracks.toList(),
                         stageLabel = stage,
                         foundCount = tracks.size,
                         latestTrackTitle = latestTitle
@@ -63,44 +72,51 @@ class PhoneMusicScanner(private val context: Context) {
         }
 
         fun tryAddTrack(track: MobileAudioTrack, stage: String): Boolean {
-            val primaryKey = track.filePath.takeIf { it.isNotBlank() }?.let { path ->
-                runCatching { File(path).canonicalPath }.getOrDefault(path)
-            } ?: track.contentUri ?: track.id
-
-            val fileName = track.filePath.takeIf { it.isNotBlank() }?.let { File(it).name } ?: track.title
+            if (isExcluded(track)) return false
+            val primaryKey = track.filePath.ifBlank { track.contentUri ?: track.id }
+            val fileName = track.filePath.takeIf { it.isNotBlank() }?.let {
+                it.substringAfterLast('/')
+            } ?: track.title
             val fingerprint = "${fileName.lowercase(Locale.ROOT)}|${track.fileSizeBytes}"
             val isDuplicateFingerprint = track.fileSizeBytes > 0L && !seenFingerprints.add(fingerprint)
             if (seenKeys.add(primaryKey) && !isDuplicateFingerprint) {
                 tracks.add(track)
-                emitProgress(stage, track.title, force = tracks.size <= 5)
+                emitProgress(stage, track.title, force = tracks.size <= 3)
                 return true
             }
             return false
         }
 
-        emitProgress("Đang quét MediaStore trên máy...", null, force = true)
-        triggerMediaScanForCommonDirs()
+        currentCoroutineContext().ensureActive()
+        emitProgress("Đang quét nhanh MediaStore...", null, force = true)
 
-        // 1. Scan Android MediaStore.Audio (ALL audio, without IS_MUSIC != 0 restriction)
+        // 1. Fast SQLite query on MediaStore.Audio (ALL audio, no IS_MUSIC != 0 filter)
         try {
-            scanMediaStoreAudio { track ->
+            scanMediaStoreAudio(folderCoverCache) { track ->
                 tryAddTrack(track, "Đang quét kho nhạc MediaStore...")
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e("PhoneMusicScanner", "MediaStore Audio query error", e)
         }
-        emitProgress("Đang quét mục Download & Tệp âm thanh...", tracks.lastOrNull()?.title, force = true)
 
-        // 2. Scan MediaStore.Downloads & MediaStore.Files with fast SQL filter
-        try {
-            scanMediaStoreDownloadsAndFiles { track ->
-                tryAddTrack(track, "Đang quét MediaStore Download...")
+        currentCoroutineContext().ensureActive()
+
+        // 2. Fast SQLite query on MediaStore.Downloads (Android 10+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            emitProgress("Đang quét mục Download (MediaStore)...", tracks.lastOrNull()?.title, force = true)
+            try {
+                scanMediaStoreDownloads(folderCoverCache) { track ->
+                    tryAddTrack(track, "Đang quét mục Download...")
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.e("PhoneMusicScanner", "MediaStore Downloads query error", e)
             }
-        } catch (e: Exception) {
-            Log.e("PhoneMusicScanner", "MediaStore Downloads/Files query error", e)
         }
 
-        // 3. Scan targeted public folders (Download, Downloads, Music, Documents, Zalo, Telegram)
+        // 3. Targeted lightweight File fallback ONLY for Download & Music (depth <= 2)
+        // MediaStore already covers Music/Recordings/Zalo/Telegram/Documents SQLite entries instantaneously.
         val candidateDirs = linkedSetOf<Pair<String, File>>()
         try {
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.let {
@@ -111,14 +127,7 @@ class PhoneMusicScanner(private val context: Context) {
             }
             Environment.getExternalStorageDirectory()?.let { root ->
                 candidateDirs.add("Đang quét thư mục Download..." to File(root, "Download"))
-                candidateDirs.add("Đang quét thư mục Downloads..." to File(root, "Downloads"))
                 candidateDirs.add("Đang quét thư mục Music..." to File(root, "Music"))
-                candidateDirs.add("Đang quét thư mục Documents..." to File(root, "Documents"))
-                candidateDirs.add("Đang quét thư mục Recordings..." to File(root, "Recordings"))
-                candidateDirs.add("Đang quét thư mục Podcasts..." to File(root, "Podcasts"))
-                candidateDirs.add("Đang quét thư mục Audiobooks..." to File(root, "Audiobooks"))
-                candidateDirs.add("Đang quét thư mục Zalo..." to File(root, "Zalo"))
-                candidateDirs.add("Đang quét thư mục Telegram..." to File(root, "Telegram"))
             }
         } catch (e: Exception) {
             Log.e("PhoneMusicScanner", "Storage roots error", e)
@@ -126,38 +135,46 @@ class PhoneMusicScanner(private val context: Context) {
 
         val visitedDirs = mutableSetOf<String>()
         for ((stageLabel, dir) in candidateDirs) {
+            currentCoroutineContext().ensureActive()
             val canonical = runCatching { dir.canonicalPath }.getOrDefault(dir.absolutePath)
             if (visitedDirs.add(canonical) && dir.exists() && dir.canRead()) {
                 emitProgress(stageLabel, tracks.lastOrNull()?.title, force = true)
-                val dirKeys = mutableSetOf<String>()
-                scanDirectoryRecursively(dir, dirKeys, maxDepth = 5) { found ->
+                scanDirectoryFast(
+                    dir = dir,
+                    seenKeys = seenKeys,
+                    folderCoverCache = folderCoverCache,
+                    maxDepth = 2
+                ) { found ->
                     tryAddTrack(found, stageLabel)
                 }
             }
         }
 
         // 4. Scan SAF folders picked manually by the user
-        extraTreeUris.forEach { treeUri ->
+        for (treeUri in extraTreeUris) {
+            currentCoroutineContext().ensureActive()
             emitProgress("Đang quét thư mục đã chọn...", tracks.lastOrNull()?.title, force = true)
             try {
-                val safKeys = mutableSetOf<String>()
-                scanDocumentTree(treeUri, safKeys) { found ->
+                scanDocumentTreeFast(treeUri, seenKeys, folderCoverCache) { found ->
                     tryAddTrack(found, "Đang quét thư mục đã chọn...")
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.e("PhoneMusicScanner", "SAF tree scan error for $treeUri", e)
             }
         }
 
-        // 5. Scan individual SAF files picked manually (Download / any folder)
+        // 5. Scan individual SAF files picked manually
         if (extraFileUris.isNotEmpty()) {
             emitProgress("Đang nạp file nhạc đã chọn...", tracks.lastOrNull()?.title, force = true)
-            extraFileUris.forEach { fileUri ->
+            for (fileUri in extraFileUris) {
+                currentCoroutineContext().ensureActive()
                 try {
-                    parsePickedFileUri(fileUri)?.let { found ->
+                    parsePickedFileUriFast(fileUri)?.let { found ->
                         tryAddTrack(found, "Đang nạp file nhạc đã chọn...")
                     }
                 } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     Log.e("PhoneMusicScanner", "SAF file scan error for $fileUri", e)
                 }
             }
@@ -175,30 +192,45 @@ class PhoneMusicScanner(private val context: Context) {
         finalList
     }
 
-    private fun triggerMediaScanForCommonDirs() {
+    suspend fun scanSingleTree(
+        treeUri: Uri,
+        excludedKeys: Set<String> = emptySet()
+    ): List<MobileAudioTrack> = withContext(Dispatchers.IO) {
+        val result = mutableListOf<MobileAudioTrack>()
+        val seenKeys = mutableSetOf<String>()
+        val folderCoverCache = mutableMapOf<String, String?>()
         try {
-            val toScan = mutableListOf<String>()
-            val dirs = listOfNotNull(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-            )
-            dirs.forEach { dir ->
-                if (dir.exists() && dir.canRead()) {
-                    dir.listFiles()?.forEach { child ->
-                        if (child.isFile && supportedExtensions.contains(child.extension.lowercase(Locale.ROOT))) {
-                            toScan.add(child.absolutePath)
-                        }
-                    }
+            scanDocumentTreeFast(treeUri, seenKeys, folderCoverCache) { track ->
+                val excluded = excludedKeys.contains(track.id) ||
+                    (track.filePath.isNotBlank() && excludedKeys.contains(track.filePath)) ||
+                    (!track.contentUri.isNullOrBlank() && excludedKeys.contains(track.contentUri))
+                if (!excluded && seenKeys.add(track.filePath.ifBlank { track.contentUri ?: track.id })) {
+                    result.add(track)
                 }
             }
-            if (toScan.isNotEmpty()) {
-                MediaScannerConnection.scanFile(context, toScan.toTypedArray(), null, null)
-            }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e("PhoneMusicScanner", "Single SAF tree scan error", e)
+        }
+        result
+    }
+
+    suspend fun parsePickedFiles(
+        fileUris: List<Uri>,
+        excludedKeys: Set<String> = emptySet()
+    ): List<MobileAudioTrack> = withContext(Dispatchers.IO) {
+        fileUris.mapNotNull { uri ->
+            runCatching { parsePickedFileUriFast(uri) }.getOrNull()
+        }.filter { track ->
+            !excludedKeys.contains(track.id) &&
+                (track.contentUri.isNullOrBlank() || !excludedKeys.contains(track.contentUri))
         }
     }
 
-    private fun scanMediaStoreAudio(onTrackFound: (MobileAudioTrack) -> Unit) {
+    private suspend fun scanMediaStoreAudio(
+        folderCoverCache: MutableMap<String, String?>,
+        onTrackFound: (MobileAudioTrack) -> Unit
+    ) {
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
         } else {
@@ -237,7 +269,11 @@ class PhoneMusicScanner(private val context: Context) {
                 cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
             } else -1
 
+            var rowCounter = 0
             while (cursor.moveToNext()) {
+                if ((rowCounter++ and 0x1F) == 0) {
+                    currentCoroutineContext().ensureActive()
+                }
                 val id = cursor.getLong(idCol)
                 val path = if (dataCol >= 0) cursor.getString(dataCol) ?: "" else ""
                 val relPath = if (relPathCol >= 0) cursor.getString(relPathCol) ?: "" else ""
@@ -261,16 +297,21 @@ class PhoneMusicScanner(private val context: Context) {
                     combinedPath.contains("/android/data")) && duration in 1..10_000L
                 if (isSystemTone) continue
 
-                val file = if (path.isNotEmpty()) File(path) else null
-                val ext = file?.extension?.lowercase(Locale.ROOT)
-                    ?.ifBlank { displayName.substringAfterLast('.', "").lowercase(Locale.ROOT) }
-                    ?: displayName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+                val ext = path.substringAfterLast('.', "").lowercase(Locale.ROOT)
+                    .ifBlank { displayName.substringAfterLast('.', "").lowercase(Locale.ROOT) }
 
                 if (supportedExtensions.contains(ext) || mime.startsWith("audio/")) {
                     val format = determineFormat(ext, mime)
                     val contentUri = ContentUris.withAppendedId(collection, id).toString()
-                    val parent = file?.parent ?: relPath.trimEnd('/')
-                    val albumArt = fastResolveMediaStoreOrFolderArt(albumId, file, contentUri)
+                    val parent = if (path.isNotBlank()) path.substringBeforeLast('/', "") else relPath.trimEnd('/')
+                    val albumArt = if (albumId > 0L) {
+                        ContentUris.withAppendedId(
+                            Uri.parse("content://media/external/audio/albumart"),
+                            albumId
+                        ).toString()
+                    } else {
+                        findCachedFolderCoverArt(parent, folderCoverCache)
+                    }
 
                     onTrackFound(
                         MobileAudioTrack(
@@ -293,149 +334,150 @@ class PhoneMusicScanner(private val context: Context) {
         }
     }
 
-    private fun scanMediaStoreDownloadsAndFiles(onTrackFound: (MobileAudioTrack) -> Unit) {
-        val urisToQuery = mutableListOf<Pair<Uri, String?>>()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            urisToQuery.add(MediaStore.Downloads.EXTERNAL_CONTENT_URI to null)
-        }
-        val audioSelection = buildString {
-            append("${MediaStore.Files.FileColumns.MEDIA_TYPE}=${MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO}")
-            append(" OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'audio/%'")
-            supportedExtensions.forEach { ext ->
-                append(" OR ${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.$ext'")
-            }
-        }
-        urisToQuery.add(MediaStore.Files.getContentUri("external") to audioSelection)
+    private suspend fun scanMediaStoreDownloads(
+        folderCoverCache: MutableMap<String, String?>,
+        onTrackFound: (MobileAudioTrack) -> Unit
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(
+            MediaStore.Downloads._ID,
+            MediaStore.Downloads.DISPLAY_NAME,
+            MediaStore.Downloads.TITLE,
+            MediaStore.Downloads.DATA,
+            MediaStore.Downloads.SIZE,
+            MediaStore.Downloads.MIME_TYPE,
+            MediaStore.Downloads.RELATIVE_PATH
+        )
 
-        for ((collection, selection) in urisToQuery) {
-            try {
-                val projectionList = mutableListOf(
-                    MediaStore.Files.FileColumns._ID,
-                    MediaStore.Files.FileColumns.DISPLAY_NAME,
-                    MediaStore.Files.FileColumns.TITLE,
-                    MediaStore.Files.FileColumns.DATA,
-                    MediaStore.Files.FileColumns.SIZE,
-                    MediaStore.Files.FileColumns.MIME_TYPE
+        context.contentResolver.query(collection, projection, null, null, null)?.use { cursor ->
+            val idCol = cursor.getColumnIndex(MediaStore.Downloads._ID)
+            if (idCol < 0) return
+            val nameCol = cursor.getColumnIndex(MediaStore.Downloads.DISPLAY_NAME)
+            val titleCol = cursor.getColumnIndex(MediaStore.Downloads.TITLE)
+            val dataCol = cursor.getColumnIndex(MediaStore.Downloads.DATA)
+            val sizeCol = cursor.getColumnIndex(MediaStore.Downloads.SIZE)
+            val mimeCol = cursor.getColumnIndex(MediaStore.Downloads.MIME_TYPE)
+            val relCol = cursor.getColumnIndex(MediaStore.Downloads.RELATIVE_PATH)
+
+            var rowCounter = 0
+            while (cursor.moveToNext()) {
+                if ((rowCounter++ and 0x1F) == 0) {
+                    currentCoroutineContext().ensureActive()
+                }
+                val id = cursor.getLong(idCol)
+                val name = if (nameCol >= 0) cursor.getString(nameCol) ?: "" else ""
+                val path = if (dataCol >= 0) cursor.getString(dataCol) ?: "" else ""
+                val mime = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "" else ""
+                val size = if (sizeCol >= 0) cursor.getLong(sizeCol) else 0L
+                val relPath = if (relCol >= 0) cursor.getString(relCol) ?: "" else ""
+
+                val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+                    .ifBlank { path.substringAfterLast('.', "").lowercase(Locale.ROOT) }
+                if (!supportedExtensions.contains(ext) && !mime.startsWith("audio/")) continue
+
+                val contentUri = ContentUris.withAppendedId(collection, id).toString()
+                val rawTitle = if (titleCol >= 0) cursor.getString(titleCol) else null
+                val title = rawTitle?.takeIf { it.isNotBlank() }
+                    ?: name.substringBeforeLast('.').takeIf { it.isNotBlank() }
+                    ?: "Bài hát #$id"
+                val format = determineFormat(ext, mime)
+                val parentDir = if (path.isNotBlank()) path.substringBeforeLast('/', "") else relPath.trimEnd('/')
+                val folderLabel = parentDir.substringAfterLast('/').ifBlank { "Download" }
+
+                onTrackFound(
+                    MobileAudioTrack(
+                        id = "dl_$id",
+                        title = title,
+                        artist = "Nghệ sĩ chưa rõ",
+                        album = folderLabel,
+                        durationMs = 0L,
+                        filePath = path,
+                        contentUri = contentUri,
+                        format = format,
+                        bitrate = if (format == "FLAC" || format == "WAV") "Lossless" else "320 kbps",
+                        fileSizeBytes = size,
+                        parentDirectory = parentDir,
+                        albumArtUri = findCachedFolderCoverArt(parentDir, folderCoverCache)
+                    )
                 )
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    projectionList.add(MediaStore.MediaColumns.RELATIVE_PATH)
-                }
-
-                val cursor = try {
-                    context.contentResolver.query(collection, projectionList.toTypedArray(), selection, null, null)
-                } catch (e: Exception) {
-                    // Fallback simpler selection if OEM SQLite rejects DISPLAY_NAME filter
-                    val fallbackSel = if (selection != null) {
-                        "${MediaStore.Files.FileColumns.MEDIA_TYPE}=${MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO} OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'audio/%'"
-                    } else null
-                    context.contentResolver.query(collection, projectionList.toTypedArray(), fallbackSel, null, null)
-                }
-
-                cursor?.use { c ->
-                    val idCol = c.getColumnIndex(MediaStore.Files.FileColumns._ID)
-                    if (idCol < 0) return@use
-                    val nameCol = c.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
-                    val titleCol = c.getColumnIndex(MediaStore.Files.FileColumns.TITLE)
-                    val dataCol = c.getColumnIndex(MediaStore.Files.FileColumns.DATA)
-                    val sizeCol = c.getColumnIndex(MediaStore.Files.FileColumns.SIZE)
-                    val mimeCol = c.getColumnIndex(MediaStore.Files.FileColumns.MIME_TYPE)
-                    val relCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        c.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
-                    } else -1
-
-                    while (c.moveToNext()) {
-                        val id = c.getLong(idCol)
-                        val name = if (nameCol >= 0) c.getString(nameCol) ?: "" else ""
-                        val path = if (dataCol >= 0) c.getString(dataCol) ?: "" else ""
-                        val mime = if (mimeCol >= 0) c.getString(mimeCol) ?: "" else ""
-                        val size = if (sizeCol >= 0) c.getLong(sizeCol) else 0L
-                        val relPath = if (relCol >= 0) c.getString(relCol) ?: "" else ""
-
-                        val extFromName = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
-                        val extFromPath = path.substringAfterLast('.', "").lowercase(Locale.ROOT)
-                        val ext = extFromName.ifBlank { extFromPath }
-
-                        if (!supportedExtensions.contains(ext) && !mime.startsWith("audio/")) continue
-
-                        val contentUri = ContentUris.withAppendedId(collection, id).toString()
-                        val file = if (path.isNotBlank()) File(path) else null
-                        val rawTitle = if (titleCol >= 0) c.getString(titleCol) else null
-                        val title = rawTitle?.takeIf { it.isNotBlank() }
-                            ?: name.substringBeforeLast('.').takeIf { it.isNotBlank() }
-                            ?: file?.nameWithoutExtension
-                            ?: "Bài hát #$id"
-                        val format = determineFormat(ext, mime)
-                        val folderLabel = file?.parentFile?.name
-                            ?: relPath.trimEnd('/').substringAfterLast('/').ifBlank { "Download" }
-
-                        onTrackFound(
-                            MobileAudioTrack(
-                                id = "dl_${collection.hashCode()}_$id",
-                                title = title,
-                                artist = "Nghệ sĩ chưa rõ",
-                                album = folderLabel,
-                                durationMs = 0L,
-                                filePath = path,
-                                contentUri = contentUri,
-                                format = format,
-                                bitrate = if (format == "FLAC" || format == "WAV") "Lossless" else "320 kbps",
-                                fileSizeBytes = size,
-                                parentDirectory = file?.parent ?: relPath.trimEnd('/'),
-                                albumArtUri = findFolderCoverArt(file?.parentFile)
-                            )
-                        )
-                    }
-                }
-            } catch (ignored: Exception) {
             }
         }
     }
 
-    private fun scanDirectoryRecursively(
+    private suspend fun scanDirectoryFast(
         dir: File,
-        seenKeys: MutableSet<String>,
+        seenKeys: Set<String>,
+        folderCoverCache: MutableMap<String, String?>,
         maxDepth: Int,
         currentDepth: Int = 0,
         onTrackFound: (MobileAudioTrack) -> Unit
     ) {
+        currentCoroutineContext().ensureActive()
         if (currentDepth > maxDepth || !dir.canRead()) return
         val files = dir.listFiles() ?: return
 
         for (file in files) {
-            if (file.isDirectory && !file.name.startsWith(".") && !file.name.equals("Android", ignoreCase = true)) {
-                scanDirectoryRecursively(file, seenKeys, maxDepth, currentDepth + 1, onTrackFound)
+            currentCoroutineContext().ensureActive()
+            if (file.isDirectory) {
+                val name = file.name
+                if (!name.startsWith(".") && !name.equals("Android", ignoreCase = true)) {
+                    scanDirectoryFast(file, seenKeys, folderCoverCache, maxDepth, currentDepth + 1, onTrackFound)
+                }
             } else if (file.isFile) {
                 val ext = file.extension.lowercase(Locale.ROOT)
-                if (supportedExtensions.contains(ext) && seenKeys.add(file.absolutePath)) {
-                    onTrackFound(parseFileTrackMetadata(file, ext))
+                val absPath = file.absolutePath
+                if (supportedExtensions.contains(ext) && !seenKeys.contains(absPath)) {
+                    val format = ext.uppercase(Locale.ROOT)
+                    val parentPath = file.parent ?: ""
+                    onTrackFound(
+                        MobileAudioTrack(
+                            id = "file_${absPath.hashCode()}",
+                            title = file.nameWithoutExtension,
+                            artist = "Nghệ sĩ chưa rõ",
+                            album = file.parentFile?.name ?: "Điện thoại",
+                            durationMs = 0L,
+                            filePath = absPath,
+                            format = format,
+                            bitrate = if (format == "FLAC" || format == "WAV") "Lossless" else "320 kbps",
+                            fileSizeBytes = file.length(),
+                            parentDirectory = parentPath,
+                            albumArtUri = findCachedFolderCoverArt(parentPath, folderCoverCache)
+                        )
+                    )
                 }
             }
         }
     }
 
-    private fun scanDocumentTree(
+    private suspend fun scanDocumentTreeFast(
         treeUri: Uri,
-        seenKeys: MutableSet<String>,
+        seenKeys: Set<String>,
+        folderCoverCache: MutableMap<String, String?>,
         onTrackFound: (MobileAudioTrack) -> Unit
     ) {
         val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
         if (rootDocId.startsWith("raw:")) {
             val rawDir = File(rootDocId.removePrefix("raw:"))
             if (rawDir.exists() && rawDir.isDirectory && rawDir.canRead()) {
-                scanDirectoryRecursively(rawDir, seenKeys, maxDepth = 5, onTrackFound = onTrackFound)
+                scanDirectoryFast(rawDir, seenKeys, folderCoverCache, maxDepth = 5, onTrackFound = onTrackFound)
+                return
             }
         }
-        scanDocumentFolder(treeUri, rootDocId, seenKeys, depth = 0, maxDepth = 5, onTrackFound = onTrackFound)
+        val folderName = formatTreeDisplayName(treeUri)
+        scanDocumentFolderFast(treeUri, rootDocId, folderName, seenKeys, depth = 0, maxDepth = 5, onTrackFound = onTrackFound)
     }
 
-    private fun scanDocumentFolder(
+    private suspend fun scanDocumentFolderFast(
         treeUri: Uri,
         parentDocId: String,
-        seenKeys: MutableSet<String>,
+        folderName: String,
+        seenKeys: Set<String>,
         depth: Int,
         maxDepth: Int,
         onTrackFound: (MobileAudioTrack) -> Unit
     ) {
+        currentCoroutineContext().ensureActive()
         if (depth > maxDepth) return
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
         val projection = arrayOf(
@@ -453,6 +495,7 @@ class PhoneMusicScanner(private val context: Context) {
             val sizeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
 
             while (cursor.moveToNext()) {
+                currentCoroutineContext().ensureActive()
                 val docId = cursor.getString(docIdCol) ?: continue
                 val name = if (nameCol >= 0) cursor.getString(nameCol) ?: continue else continue
                 val mime = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "" else ""
@@ -460,15 +503,31 @@ class PhoneMusicScanner(private val context: Context) {
 
                 if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                     if (!name.startsWith(".")) {
-                        scanDocumentFolder(treeUri, docId, seenKeys, depth + 1, maxDepth, onTrackFound)
+                        scanDocumentFolderFast(treeUri, docId, name, seenKeys, depth + 1, maxDepth, onTrackFound)
                     }
                 } else {
                     val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
                     if (supportedExtensions.contains(ext) || mime.startsWith("audio/")) {
                         val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
                         val uriStr = docUri.toString()
-                        if (seenKeys.add(uriStr)) {
-                            onTrackFound(parseSafTrackMetadata(docUri, name, ext, mime, size))
+                        if (!seenKeys.contains(uriStr)) {
+                            val format = determineFormat(ext, mime)
+                            onTrackFound(
+                                MobileAudioTrack(
+                                    id = "saf_${uriStr.hashCode()}",
+                                    title = name.substringBeforeLast('.').ifBlank { name },
+                                    artist = "Nghệ sĩ chưa rõ",
+                                    album = folderName,
+                                    durationMs = 0L,
+                                    filePath = "",
+                                    contentUri = uriStr,
+                                    format = format,
+                                    bitrate = if (format == "FLAC" || format == "WAV") "Lossless" else "320 kbps",
+                                    fileSizeBytes = size,
+                                    parentDirectory = folderName,
+                                    albumArtUri = null
+                                )
+                            )
                         }
                     }
                 }
@@ -476,7 +535,7 @@ class PhoneMusicScanner(private val context: Context) {
         }
     }
 
-    private fun parsePickedFileUri(fileUri: Uri): MobileAudioTrack? {
+    private fun parsePickedFileUriFast(fileUri: Uri): MobileAudioTrack? {
         var displayName = fileUri.lastPathSegment?.substringAfterLast('/') ?: "Nhạc đã chọn"
         var size = 0L
         val mime = context.contentResolver.getType(fileUri) ?: ""
@@ -500,153 +559,44 @@ class PhoneMusicScanner(private val context: Context) {
         if (!supportedExtensions.contains(ext) && !mime.startsWith("audio/")) {
             return null
         }
-        return parseSafTrackMetadata(fileUri, displayName, ext, mime, size)
-    }
-
-    private fun parseSafTrackMetadata(
-        docUri: Uri,
-        displayName: String,
-        ext: String,
-        mime: String,
-        size: Long
-    ): MobileAudioTrack {
+        val uriStr = fileUri.toString()
         val format = determineFormat(ext, mime)
-        var title = displayName.substringBeforeLast('.').ifBlank { displayName }
-        var artist = "Nghệ sĩ chưa rõ"
-        var album = "Thư mục đã chọn"
-        var durationMs = 0L
-        var bitrate = if (format == "FLAC" || format == "WAV") "Lossless" else "320 kbps"
-        var albumArtPath: String? = null
-
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(context, docUri)
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)?.takeIf { it.isNotBlank() }?.let { title = it }
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.takeIf { it.isNotBlank() }?.let { artist = it }
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.takeIf { it.isNotBlank() }?.let { album = it }
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?.let { durationMs = it }
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toLongOrNull()?.let { bps ->
-                if (bps > 0) bitrate = "${bps / 1000} kbps"
-            }
-            albumArtPath = cacheEmbeddedPicture(docUri.toString(), retriever.embeddedPicture)
-        } catch (ignored: Exception) {
-        } finally {
-            try {
-                retriever.release()
-            } catch (ignored: Exception) {}
-        }
-
         return MobileAudioTrack(
-            id = "saf_${docUri.toString().hashCode()}",
-            title = title,
-            artist = artist,
-            album = album,
-            durationMs = durationMs,
+            id = "saf_${uriStr.hashCode()}",
+            title = displayName.substringBeforeLast('.').ifBlank { displayName },
+            artist = "Nghệ sĩ chưa rõ",
+            album = "Nhạc đã chọn",
+            durationMs = 0L,
             filePath = "",
-            contentUri = docUri.toString(),
+            contentUri = uriStr,
             format = format,
-            bitrate = bitrate,
+            bitrate = if (format == "FLAC" || format == "WAV") "Lossless" else "320 kbps",
             fileSizeBytes = size,
-            parentDirectory = "Thư mục đã chọn",
-            albumArtUri = albumArtPath
+            parentDirectory = "Nhạc đã chọn",
+            albumArtUri = null
         )
     }
 
-    private fun parseFileTrackMetadata(file: File, ext: String): MobileAudioTrack {
-        val format = ext.uppercase(Locale.ROOT)
-        var title = file.nameWithoutExtension
-        var artist = "Nghệ sĩ chưa rõ"
-        var album = file.parentFile?.name ?: "Điện thoại"
-        var durationMs = 0L
-        var bitrate = if (format == "FLAC" || format == "WAV") "Lossless" else "320 kbps"
-        var albumArtUri: String? = null
+    private fun findCachedFolderCoverArt(
+        folderPath: String,
+        cache: MutableMap<String, String?>
+    ): String? {
+        if (folderPath.isBlank() || !folderPath.startsWith("/")) return null
+        if (cache.containsKey(folderPath)) return cache[folderPath]
 
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(file.absolutePath)
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)?.takeIf { it.isNotBlank() }?.let { title = it }
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.takeIf { it.isNotBlank() }?.let { artist = it }
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.takeIf { it.isNotBlank() }?.let { album = it }
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?.let { durationMs = it }
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toLongOrNull()?.let { bps ->
-                if (bps > 0) bitrate = "${bps / 1000} kbps"
-            }
-            albumArtUri = cacheEmbeddedPicture(file.absolutePath, retriever.embeddedPicture)
-        } catch (ignored: Exception) {
-        } finally {
-            try {
-                retriever.release()
-            } catch (ignored: Exception) {}
-        }
-
-        if (albumArtUri == null) {
-            albumArtUri = findFolderCoverArt(file.parentFile)
-        }
-
-        return MobileAudioTrack(
-            id = "file_${file.absolutePath.hashCode()}",
-            title = title,
-            artist = artist,
-            album = album,
-            durationMs = durationMs,
-            filePath = file.absolutePath,
-            format = format,
-            bitrate = bitrate,
-            fileSizeBytes = file.length(),
-            parentDirectory = file.parent ?: "",
-            albumArtUri = albumArtUri
-        )
-    }
-
-    private fun fastResolveMediaStoreOrFolderArt(albumId: Long, file: File?, contentUri: String): String? {
-        val cacheKey = file?.absolutePath ?: contentUri
-        val cacheFile = File(getAlbumArtCacheDir(), "${cacheKey.hashCode()}.jpg")
-        if (cacheFile.exists() && cacheFile.length() > 0L) {
-            return cacheFile.absolutePath
-        }
-
-        if (albumId > 0) {
-            val artUri = ContentUris.withAppendedId(
-                Uri.parse("content://media/external/audio/albumart"),
-                albumId
-            )
-            try {
-                context.contentResolver.openInputStream(artUri)?.use {
-                    return artUri.toString()
+        var resolved: String? = null
+        val folder = File(folderPath)
+        if (folder.exists() && folder.isDirectory) {
+            for (candidateName in coverFileNames) {
+                val candidate = File(folder, candidateName)
+                if (candidate.isFile && candidate.length() > 0L) {
+                    resolved = candidate.absolutePath
+                    break
                 }
-            } catch (ignored: Exception) {
             }
         }
-
-        return findFolderCoverArt(file?.parentFile)
-    }
-
-    private fun cacheEmbeddedPicture(cacheKey: String, pictureBytes: ByteArray?): String? {
-        if (pictureBytes == null || pictureBytes.isEmpty()) return null
-        return try {
-            val artDir = getAlbumArtCacheDir()
-            val outFile = File(artDir, "${cacheKey.hashCode()}.jpg")
-            if (!outFile.exists() || outFile.length() == 0L) {
-                FileOutputStream(outFile).use { it.write(pictureBytes) }
-            }
-            outFile.absolutePath
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun findFolderCoverArt(folder: File?): String? {
-        if (folder == null || !folder.exists() || !folder.isDirectory || !folder.canRead()) return null
-        val files = folder.listFiles() ?: return null
-        for (candidateName in coverFileNames) {
-            val match = files.firstOrNull { it.isFile && it.name.equals(candidateName, ignoreCase = true) }
-            if (match != null) return match.absolutePath
-        }
-        return null
-    }
-
-    private fun getAlbumArtCacheDir(): File {
-        return File(context.cacheDir, "album_art").apply { mkdirs() }
+        cache[folderPath] = resolved
+        return resolved
     }
 
     private fun determineFormat(ext: String, mime: String): String {
@@ -660,6 +610,24 @@ class PhoneMusicScanner(private val context: Context) {
             ext.equals("wma", ignoreCase = true) -> "WMA"
             ext.equals("mid", ignoreCase = true) -> "MIDI"
             else -> "MP3"
+        }
+    }
+
+    companion object {
+        fun formatTreeDisplayName(treeUri: Uri): String {
+            return try {
+                val docId = DocumentsContract.getTreeDocumentId(treeUri)
+                when {
+                    docId.startsWith("raw:") -> docId.removePrefix("raw:")
+                    docId.contains(":") -> {
+                        val afterColon = docId.substringAfter(":").trim('/')
+                        if (afterColon.isBlank()) "Bộ nhớ gốc" else afterColon
+                    }
+                    else -> docId
+                }
+            } catch (_: Exception) {
+                treeUri.lastPathSegment?.substringAfterLast(':') ?: "Thư mục đã chọn"
+            }
         }
     }
 }

@@ -17,6 +17,7 @@ import com.example.model.WifiMusicRole
 import com.example.qr.DiscoveredPhoneServer
 import com.example.qr.LanMusicDiscoveryClient
 import com.example.qr.LocalBackgroundServer
+import com.example.qr.RemoteCastTrackRequest
 import com.example.qr.TvPlaybackSnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -125,6 +126,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val sleepTimerSeconds = playbackManager.sleepTimerSeconds
     val visualizerBands = playbackManager.visualizerBands
     val playlist = playbackManager.playlist
+    val antiHiss24BitEnabled = playbackManager.antiHiss24BitEnabled
+    val backgroundPlaybackEnabled = playbackManager.backgroundPlaybackEnabled
+    val keepCpuAwakeInBackground = playbackManager.keepCpuAwakeInBackground
 
     private val localServer = LocalBackgroundServer(
         context = application,
@@ -141,7 +145,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 format = t?.format ?: "",
                 isPlaying = isPlaying.value,
                 positionMs = currentPositionMs.value,
-                durationMs = durationMs.value
+                durationMs = durationMs.value,
+                isShuffle = isShuffle.value,
+                repeatMode = repeatMode.value.name
             )
         },
         onPlayTrackOnTv = { trackId ->
@@ -153,12 +159,27 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
             }
         },
+        onPlayRemoteTrackOnTv = { req ->
+            viewModelScope.launch(Dispatchers.Main) {
+                playRemoteCastRequest(req)
+            }
+        },
         onTvControl = { action ->
             viewModelScope.launch(Dispatchers.Main) {
-                when (action) {
-                    "toggle" -> togglePlayPause()
-                    "next" -> skipNext()
-                    "prev" -> skipPrevious()
+                when {
+                    action == "toggle" -> togglePlayPause()
+                    action == "play" -> playbackManager.resume()
+                    action == "pause" -> playbackManager.pause()
+                    action == "next" -> skipNext()
+                    action == "prev" -> skipPrevious()
+                    action == "forward" -> seekForward()
+                    action == "rewind" -> seekRewind()
+                    action == "shuffle" -> toggleShuffle()
+                    action == "repeat" -> cycleRepeatMode()
+                    action.startsWith("seek:") -> {
+                        val pos = action.substringAfter("seek:").toLongOrNull()
+                        if (pos != null) seekTo(pos)
+                    }
                 }
             }
         },
@@ -224,6 +245,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     init {
         scanLibrary()
+        startTvCastReceiverSilently()
+    }
+
+    private fun startTvCastReceiverSilently() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val baseUrl = localServer.start()
+                _wifiServerUrl.value = "$baseUrl/?tab=play"
+                _isWifiServerRunning.value = true
+                isWifiMusicPinned = true
+            } catch (_: Exception) {
+            }
+        }
     }
 
     fun scanLibrary() {
@@ -234,6 +268,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun addSafFolder(uri: Uri) {
         repository.addSafFolder(uri)
+        scanLibrary()
+    }
+
+    fun addLocalFolderPath(path: String) {
+        repository.addLocalFolderPath(path)
         scanLibrary()
     }
 
@@ -257,6 +296,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun activateCurrentWifiRole() {
         when (wifiMusicRole.value) {
             WifiMusicRole.TV_CLIENT_PULL_PHONE -> {
+                startTvCastReceiverSilently()
                 startLanDiscoveryListener()
                 if (_discoveredPhoneServers.value.isEmpty() && !_isScanningLanServers.value) {
                     scanLanPhoneServers()
@@ -492,6 +532,32 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    private fun playRemoteCastRequest(req: RemoteCastTrackRequest) {
+        fun toAudioTrack(r: RemoteCastTrackRequest): AudioTrack = AudioTrack(
+            id = r.id,
+            title = r.title,
+            artist = r.artist,
+            album = r.album,
+            durationMs = r.durationMs,
+            filePath = r.streamUrl,
+            contentUri = r.streamUrl,
+            format = r.format,
+            bitrate = r.bitrate,
+            sampleRate = "Wi-Fi Direct",
+            fileSizeBytes = 0L,
+            parentDirectory = "Wi-Fi: Điện thoại",
+            albumArtUri = r.coverUrl
+        )
+        val primary = toAudioTrack(req)
+        val queue = if (req.queueTracks.isNotEmpty()) {
+            val mapped = req.queueTracks.map { toAudioTrack(it) }
+            if (mapped.any { it.id == primary.id }) mapped else listOf(primary) + mapped
+        } else {
+            listOf(primary)
+        }
+        playTrack(primary, queue)
+    }
+
     fun playTrack(track: AudioTrack, queue: List<AudioTrack>) {
         repository.addToRecent(track)
         playbackManager.playTrack(track, queue)
@@ -508,7 +574,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun togglePlayPause() = playbackManager.togglePlayPause()
+    fun togglePlayPause() {
+        if (currentTrack.value == null) {
+            val queue = playlist.value.ifEmpty { allTracks.value }
+            if (queue.isNotEmpty()) {
+                playTrack(queue.first(), queue)
+            }
+            return
+        }
+        playbackManager.togglePlayPause()
+    }
     fun skipNext() = playbackManager.skipNext()
     fun skipPrevious() = playbackManager.skipPrevious()
     fun seekTo(positionMs: Long) = playbackManager.seekTo(positionMs)
@@ -518,6 +593,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun cycleRepeatMode() = playbackManager.cycleRepeatMode()
     fun setEqualizer(preset: EqualizerPreset) = playbackManager.setEqualizerPreset(preset)
     fun setSleepTimer(minutes: Int?) = playbackManager.setSleepTimer(minutes)
+    fun setAntiHiss24BitEnabled(enabled: Boolean) = playbackManager.setAntiHiss24BitEnabled(enabled)
+    fun setBackgroundPlaybackEnabled(enabled: Boolean) = playbackManager.setBackgroundPlaybackEnabled(enabled)
+    fun setKeepCpuAwakeInBackground(enabled: Boolean) = playbackManager.setKeepCpuAwakeInBackground(enabled)
     fun toggleFavorite(trackId: String) = repository.toggleFavorite(trackId)
 
     override fun onCleared() {

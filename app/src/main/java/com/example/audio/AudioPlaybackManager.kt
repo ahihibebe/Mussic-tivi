@@ -1,13 +1,13 @@
 package com.example.audio
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
-import android.media.MediaPlayer
 import android.net.Uri
-import android.os.Build
 import android.util.Log
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import com.example.model.AudioTrack
 import com.example.model.EqualizerPreset
 import com.example.model.RepeatMode
@@ -24,9 +24,9 @@ import java.io.File
 
 class AudioPlaybackManager(private val context: Context) {
 
+    private val prefs = context.getSharedPreferences("tv_music_prefs", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(Dispatchers.Main + Job())
-    private var mediaPlayer: MediaPlayer? = null
-    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private var exoPlayer: ExoPlayer? = null
 
     private val _currentTrack = MutableStateFlow<AudioTrack?>(null)
     val currentTrack: StateFlow<AudioTrack?> = _currentTrack.asStateFlow()
@@ -61,6 +61,27 @@ class AudioPlaybackManager(private val context: Context) {
     private val _currentIndex = MutableStateFlow(0)
     val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
 
+    private val _antiHiss24BitEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_ANTI_HISS_24BIT, true).also {
+            TvExoPlayerCore.pcmProcessor.antiHissEnabled = it
+        }
+    )
+    val antiHiss24BitEnabled: StateFlow<Boolean> = _antiHiss24BitEnabled.asStateFlow()
+
+    private val _backgroundPlaybackEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_BACKGROUND_PLAYBACK, true).also {
+            TvExoPlayerCore.backgroundPlaybackEnabled = it
+        }
+    )
+    val backgroundPlaybackEnabled: StateFlow<Boolean> = _backgroundPlaybackEnabled.asStateFlow()
+
+    private val _keepCpuAwakeInBackground = MutableStateFlow(
+        prefs.getBoolean(KEY_KEEP_CPU_AWAKE, true).also {
+            TvExoPlayerCore.keepCpuAwakeInBackground = it
+        }
+    )
+    val keepCpuAwakeInBackground: StateFlow<Boolean> = _keepCpuAwakeInBackground.asStateFlow()
+
     // Visualizer simulation flow (0f..1f for 16 frequency bands)
     private val _visualizerBands = MutableStateFlow(List(16) { 0.1f })
     val visualizerBands: StateFlow<List<Float>> = _visualizerBands.asStateFlow()
@@ -69,9 +90,47 @@ class AudioPlaybackManager(private val context: Context) {
     private var sleepTimerJob: Job? = null
     private var visualizerJob: Job? = null
 
+    private val playerListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            _isPlaying.value = isPlaying
+            if (isPlaying && _backgroundPlaybackEnabled.value) {
+                MusicPlaybackService.ensureStarted(context)
+            }
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            val player = exoPlayer ?: return
+            if (playbackState == Player.STATE_READY) {
+                val dur = player.duration
+                if (dur > 0L) {
+                    _durationMs.value = dur
+                } else {
+                    _currentTrack.value?.durationMs?.let { if (it > 0L) _durationMs.value = it }
+                }
+            } else if (playbackState == Player.STATE_ENDED) {
+                onTrackCompleted()
+            }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            Log.e("AudioPlaybackManager", "ExoPlayer error: ${error.errorCodeName}", error)
+            _isPlaying.value = false
+        }
+    }
+
     init {
         startProgressTracker()
         startVisualizerGenerator()
+    }
+
+    private fun ensurePlayer(): ExoPlayer {
+        val existing = exoPlayer
+        if (existing != null) return existing
+        val created = TvExoPlayerCore.getOrCreatePlayer(context).apply {
+            addListener(playerListener)
+        }
+        exoPlayer = created
+        return created
     }
 
     fun playTrack(track: AudioTrack, queue: List<AudioTrack> = emptyList()) {
@@ -84,64 +143,87 @@ class AudioPlaybackManager(private val context: Context) {
 
     private fun prepareAndPlay(track: AudioTrack) {
         try {
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .build()
-                )
-
-                if (track.contentUri != null) {
-                    setDataSource(context, Uri.parse(track.contentUri))
-                } else {
-                    setDataSource(track.filePath)
-                }
-
-                setOnPreparedListener { mp ->
-                    val dur = mp.duration.toLong()
-                    _durationMs.value = if (dur > 0) dur else track.durationMs
-                    mp.start()
-                    _isPlaying.value = true
-                    applyPlaybackSpeed()
-                }
-
-                setOnCompletionListener {
-                    onTrackCompleted()
-                }
-
-                setOnErrorListener { _, what, extra ->
-                    Log.e("AudioPlaybackManager", "MediaPlayer error: what=$what, extra=$extra")
-                    _isPlaying.value = false
-                    true
-                }
-
-                prepareAsync()
+            val player = ensurePlayer()
+            val mediaUri = resolveMediaUri(track) ?: run {
+                Log.e("AudioPlaybackManager", "Empty media URI for track: ${track.title}")
+                _isPlaying.value = false
+                return
             }
+
+            val metadataBuilder = MediaMetadata.Builder()
+                .setTitle(track.title)
+                .setArtist(track.artist)
+                .setAlbumTitle(track.album)
+            if (!track.albumArtUri.isNullOrBlank()) {
+                val artUri = if (track.albumArtUri.startsWith("/")) {
+                    Uri.fromFile(File(track.albumArtUri))
+                } else {
+                    Uri.parse(track.albumArtUri)
+                }
+                metadataBuilder.setArtworkUri(artUri)
+            }
+
+            val mediaItem = MediaItem.Builder()
+                .setMediaId(track.id)
+                .setUri(mediaUri)
+                .setMediaMetadata(metadataBuilder.build())
+                .build()
 
             _currentTrack.value = track
             _currentPositionMs.value = 0L
+            _durationMs.value = track.durationMs.coerceAtLeast(0L)
 
+            player.setMediaItem(mediaItem)
+            if (_playbackSpeed.value != 1.0f) {
+                player.setPlaybackSpeed(_playbackSpeed.value)
+            }
+            player.prepare()
+            player.playWhenReady = true
+            player.play()
+            _isPlaying.value = true
+
+            if (_backgroundPlaybackEnabled.value) {
+                MusicPlaybackService.ensureStarted(context)
+            }
         } catch (e: Exception) {
             Log.e("AudioPlaybackManager", "Error preparing track: ${track.filePath}", e)
             _isPlaying.value = false
         }
     }
 
+    private fun resolveMediaUri(track: AudioTrack): Uri? {
+        val uriStr = track.contentUri
+        if (!uriStr.isNullOrBlank()) {
+            return if (uriStr.startsWith("/")) Uri.fromFile(File(uriStr)) else Uri.parse(uriStr)
+        }
+        val path = track.filePath
+        if (path.isNotBlank()) {
+            return if (path.startsWith("http://", ignoreCase = true) ||
+                path.startsWith("https://", ignoreCase = true) ||
+                path.startsWith("content://", ignoreCase = true)
+            ) {
+                Uri.parse(path)
+            } else {
+                Uri.fromFile(File(path))
+            }
+        }
+        return null
+    }
+
     fun togglePlayPause() {
-        val mp = mediaPlayer
-        if (mp != null) {
-            if (mp.isPlaying) {
-                mp.pause()
+        val player = exoPlayer
+        if (player != null && player.mediaItemCount > 0) {
+            if (player.isPlaying) {
+                player.pause()
                 _isPlaying.value = false
             } else {
-                requestAudioFocus()
-                mp.start()
+                player.play()
                 _isPlaying.value = true
+                if (_backgroundPlaybackEnabled.value) {
+                    MusicPlaybackService.ensureStarted(context)
+                }
             }
         } else {
-            // If no track loaded, play first in playlist if available
             val tracks = _playlist.value
             if (tracks.isNotEmpty()) {
                 val idx = _currentIndex.value.coerceIn(0, tracks.lastIndex)
@@ -151,8 +233,8 @@ class AudioPlaybackManager(private val context: Context) {
     }
 
     fun pause() {
-        mediaPlayer?.let {
-            if (it.isPlaying) {
+        exoPlayer?.let {
+            if (it.isPlaying || it.playWhenReady) {
                 it.pause()
                 _isPlaying.value = false
             }
@@ -160,23 +242,27 @@ class AudioPlaybackManager(private val context: Context) {
     }
 
     fun resume() {
-        mediaPlayer?.let {
-            if (!it.isPlaying) {
-                requestAudioFocus()
-                it.start()
+        exoPlayer?.let {
+            if (!it.isPlaying && it.mediaItemCount > 0) {
+                it.play()
                 _isPlaying.value = true
+                if (_backgroundPlaybackEnabled.value) {
+                    MusicPlaybackService.ensureStarted(context)
+                }
             }
         }
     }
 
     fun seekTo(positionMs: Long) {
-        val target = positionMs.coerceIn(0L, _durationMs.value.coerceAtLeast(1L))
-        mediaPlayer?.seekTo(target.toInt())
+        val maxDur = _durationMs.value.coerceAtLeast(1L)
+        val target = positionMs.coerceIn(0L, maxDur)
+        exoPlayer?.seekTo(target)
         _currentPositionMs.value = target
     }
 
     fun seekForward(deltaMs: Long = 10000L) {
-        val newPos = (_currentPositionMs.value + deltaMs).coerceAtMost(_durationMs.value)
+        val maxDur = _durationMs.value.coerceAtLeast(_currentPositionMs.value)
+        val newPos = (_currentPositionMs.value + deltaMs).coerceAtMost(maxDur)
         seekTo(newPos)
     }
 
@@ -205,7 +291,6 @@ class AudioPlaybackManager(private val context: Context) {
         val tracks = _playlist.value
         if (tracks.isEmpty()) return
 
-        // If playing for > 3 seconds, restart current track first
         if (_currentPositionMs.value > 3000L) {
             seekTo(0L)
             return
@@ -224,9 +309,12 @@ class AudioPlaybackManager(private val context: Context) {
     private fun onTrackCompleted() {
         when (_repeatMode.value) {
             RepeatMode.ONE -> {
-                seekTo(0L)
-                mediaPlayer?.start()
-                _isPlaying.value = true
+                exoPlayer?.let {
+                    it.seekTo(0L)
+                    it.play()
+                    _isPlaying.value = true
+                    _currentPositionMs.value = 0L
+                }
             }
             RepeatMode.ALL -> {
                 skipNext()
@@ -261,21 +349,45 @@ class AudioPlaybackManager(private val context: Context) {
 
     fun setPlaybackSpeed(speed: Float) {
         _playbackSpeed.value = speed
-        applyPlaybackSpeed()
+        try {
+            exoPlayer?.setPlaybackSpeed(speed)
+        } catch (e: Exception) {
+            Log.e("AudioPlaybackManager", "Error setting playback speed", e)
+        }
     }
 
-    private fun applyPlaybackSpeed() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && _playbackSpeed.value != 1.0f) {
-            mediaPlayer?.let { mp ->
-                try {
-                    val params = mp.playbackParams
-                    params.speed = _playbackSpeed.value
-                    mp.playbackParams = params
-                } catch (e: Exception) {
-                    Log.e("AudioPlaybackManager", "Error setting playback speed", e)
-                }
-            }
+    fun setAntiHiss24BitEnabled(enabled: Boolean) {
+        _antiHiss24BitEnabled.value = enabled
+        TvExoPlayerCore.pcmProcessor.antiHissEnabled = enabled
+        prefs.edit().putBoolean(KEY_ANTI_HISS_24BIT, enabled).apply()
+        // Re-prepare active track if currently loaded so audio sink reconfigures cleanly
+        val active = _currentTrack.value
+        val pos = _currentPositionMs.value
+        val wasPlaying = _isPlaying.value
+        if (active != null && exoPlayer != null) {
+            prepareAndPlay(active)
+            if (pos > 0L) seekTo(pos)
+            if (!wasPlaying) pause()
         }
+    }
+
+    fun setBackgroundPlaybackEnabled(enabled: Boolean) {
+        _backgroundPlaybackEnabled.value = enabled
+        TvExoPlayerCore.backgroundPlaybackEnabled = enabled
+        prefs.edit().putBoolean(KEY_BACKGROUND_PLAYBACK, enabled).apply()
+        if (enabled) {
+            if (_isPlaying.value || _currentTrack.value != null) {
+                MusicPlaybackService.ensureStarted(context)
+            }
+        } else {
+            MusicPlaybackService.stopService(context)
+        }
+    }
+
+    fun setKeepCpuAwakeInBackground(enabled: Boolean) {
+        _keepCpuAwakeInBackground.value = enabled
+        TvExoPlayerCore.keepCpuAwakeInBackground = enabled
+        prefs.edit().putBoolean(KEY_KEEP_CPU_AWAKE, enabled).apply()
     }
 
     fun setSleepTimer(minutes: Int?) {
@@ -305,12 +417,17 @@ class AudioPlaybackManager(private val context: Context) {
         progressJob?.cancel()
         progressJob = scope.launch {
             while (isActive) {
-                delay(200L)
-                mediaPlayer?.let { mp ->
-                    if (_isPlaying.value && mp.isPlaying) {
-                        try {
-                            _currentPositionMs.value = mp.currentPosition.toLong()
-                        } catch (ignored: Exception) {}
+                delay(250L)
+                exoPlayer?.let { player ->
+                    try {
+                        if (player.isPlaying) {
+                            _currentPositionMs.value = player.currentPosition.coerceAtLeast(0L)
+                            val dur = player.duration
+                            if (dur > 0L && _durationMs.value != dur) {
+                                _durationMs.value = dur
+                            }
+                        }
+                    } catch (_: Exception) {
                     }
                 }
             }
@@ -332,7 +449,6 @@ class AudioPlaybackManager(private val context: Context) {
                         val noise = (Math.random().toFloat() * 0.3f)
                         val raw = (wave * 0.35f + 0.45f + noise).coerceIn(0.08f, 0.98f)
 
-                        // Apply EQ preset factor
                         val eqFactor = if (index < 4) {
                             1f + (preset.bass * 0.4f)
                         } else if (index in 4..10) {
@@ -350,46 +466,18 @@ class AudioPlaybackManager(private val context: Context) {
         }
     }
 
-    private fun requestAudioFocus(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
-                .setAcceptsDelayedFocusGain(true)
-                .setOnAudioFocusChangeListener { focusChange ->
-                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
-                        focusChange == AudioManager.AUDIOFOCUS_LOSS
-                    ) {
-                        pause()
-                    }
-                }
-                .build()
-            audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.requestAudioFocus(
-                { focusChange ->
-                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
-                        focusChange == AudioManager.AUDIOFOCUS_LOSS
-                    ) {
-                        pause()
-                    }
-                },
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN
-            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        }
-    }
-
     fun release() {
         progressJob?.cancel()
         sleepTimerJob?.cancel()
         visualizerJob?.cancel()
-        mediaPlayer?.release()
-        mediaPlayer = null
+        exoPlayer?.removeListener(playerListener)
+        exoPlayer = null
+        TvExoPlayerCore.releaseIfNotBackground()
+    }
+
+    companion object {
+        private const val KEY_ANTI_HISS_24BIT = "anti_hiss_24bit_enabled"
+        private const val KEY_BACKGROUND_PLAYBACK = "background_playback_enabled"
+        private const val KEY_KEEP_CPU_AWAKE = "keep_cpu_awake_background"
     }
 }
