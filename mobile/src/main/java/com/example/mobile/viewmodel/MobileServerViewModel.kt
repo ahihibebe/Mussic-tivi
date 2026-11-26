@@ -21,6 +21,8 @@ import com.example.mobile.network.TvRemoteStatus
 import com.example.mobile.scanner.PhoneMusicScanner
 import com.example.mobile.server.MobileHttpMusicServer
 import com.example.mobile.server.QrGenerator
+import com.example.mobile.webrtc.MobileWebRtcHost
+import com.example.mobile.webrtc.MobileWebRtcState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -76,7 +78,11 @@ data class MobileServerUiState(
     val manualTvIp: String = "",
     val tvStatus: TvRemoteStatus = TvRemoteStatus(),
     val tvConnectionMessage: String? = null,
-    val castingTrackId: String? = null
+    val castingTrackId: String? = null,
+    // WebRTC Cross-Network Streaming (Google STUN)
+    val webRtcState: MobileWebRtcState = MobileWebRtcState(),
+    val webRtcOfferQrBitmap: ImageBitmap? = null,
+    val webRtcAnswerInput: String = ""
 )
 
 class MobileServerViewModel(application: Application) : AndroidViewModel(application) {
@@ -117,12 +123,26 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
     private val _tvStatus = MutableStateFlow(TvRemoteStatus())
     private val _tvConnectionMessage = MutableStateFlow<String?>(null)
     private val _castingTrackId = MutableStateFlow<String?>(null)
+    private val _webRtcOfferQrBitmap = MutableStateFlow<ImageBitmap?>(null)
+    private val _webRtcAnswerInput = MutableStateFlow("")
 
     private val httpServer = MobileHttpMusicServer(
         context = application,
         getTracks = { _tracks.value },
         onStatusUpdate = { msg -> _statusText.value = msg },
         onClientStreamed = { logMsg -> appendActivityLog(logMsg) }
+    )
+
+    private val webRtcHost = MobileWebRtcHost(
+        rawContext = application,
+        getDeviceName = { httpServer.deviceDisplayName },
+        getTracks = { _tracks.value },
+        onTvStatusReceived = { status ->
+            _tvStatus.value = status
+        },
+        onActivityLog = { logMsg ->
+            appendActivityLog(logMsg)
+        }
     )
 
     private data class ScanVisualMeta(
@@ -212,6 +232,24 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
         )
     }
 
+    private data class WebRtcMeta(
+        val state: MobileWebRtcState,
+        val qrBitmap: ImageBitmap?,
+        val answerInput: String
+    )
+
+    private val webRtcMetaFlow = combine(
+        webRtcHost.state,
+        _webRtcOfferQrBitmap,
+        _webRtcAnswerInput
+    ) { rtcState, qr, ans ->
+        WebRtcMeta(rtcState, qr, ans)
+    }
+
+    private val tvAndWebRtcFlow = combine(tvRemoteMetaFlow, webRtcMetaFlow) { tvMeta, rtcMeta ->
+        tvMeta to rtcMeta
+    }
+
     val uiState: StateFlow<MobileServerUiState> = combine(
         _tracks,
         _searchQuery,
@@ -222,7 +260,7 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
         folderMetaFlow,
         _previewTrackId,
         _isPreviewPlaying,
-        tvRemoteMetaFlow
+        tvAndWebRtcFlow
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val tracks = values[0] as List<MobileAudioTrack>
@@ -234,7 +272,10 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
         val folderMeta = values[6] as FolderLibraryMeta
         val previewId = values[7] as String?
         val isPreview = values[8] as Boolean
-        val tvMeta = values[9] as TvRemoteMeta
+        @Suppress("UNCHECKED_CAST")
+        val tvAndRtc = values[9] as Pair<TvRemoteMeta, WebRtcMeta>
+        val tvMeta = tvAndRtc.first
+        val rtcMeta = tvAndRtc.second
 
         val counts = linkedMapOf<String, Int>()
         counts["ALL"] = tracks.size
@@ -290,7 +331,10 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
             manualTvIp = tvMeta.manualTvIp,
             tvStatus = tvMeta.tvStatus,
             tvConnectionMessage = tvMeta.tvMessage,
-            castingTrackId = tvMeta.castingTrackId
+            castingTrackId = tvMeta.castingTrackId,
+            webRtcState = rtcMeta.state,
+            webRtcOfferQrBitmap = rtcMeta.qrBitmap,
+            webRtcAnswerInput = rtcMeta.answerInput
         )
     }.stateIn(
         scope = viewModelScope,
@@ -392,6 +436,9 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
                 }
                 _lastScanSummary.value = summary
                 appendActivityLog(summary)
+                if (webRtcHost.state.value.isDataChannelOpen) {
+                    webRtcHost.pushTrackLibraryOverWebRtc()
+                }
             } catch (_: CancellationException) {
                 // Save whatever was found before stopping so user does not need to rescan
                 val current = _tracks.value
@@ -697,11 +744,96 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    // --- WebRTC Cross-Network Streaming (Google STUN) ---
+
+    fun createWebRtcOffer() {
+        viewModelScope.launch {
+            acquireWakeLock()
+            val result = webRtcHost.createOfferTokenSuspend()
+            result.onSuccess { token ->
+                val qr = withContext(Dispatchers.IO) { QrGenerator.generate(token, 480) }
+                _webRtcOfferQrBitmap.value = qr
+            }.onFailure { err ->
+                _tvConnectionMessage.value = "Lỗi tạo Offer WebRTC: ${err.message}"
+            }
+        }
+    }
+
+    fun onWebRtcAnswerInputChange(value: String) {
+        _webRtcAnswerInput.value = value
+    }
+
+    fun applyWebRtcAnswer(rawAnswer: String = _webRtcAnswerInput.value) {
+        val trimmed = rawAnswer.trim()
+        if (trimmed.isBlank()) {
+            _tvConnectionMessage.value = "Hãy dán mã Answer (TVANS1:...) từ Tivi"
+            return
+        }
+        viewModelScope.launch {
+            acquireWakeLock()
+            webRtcHost.applyAnswerTokenSuspend(trimmed).onFailure { err ->
+                _tvConnectionMessage.value = err.message ?: "Mã Answer không hợp lệ"
+            }
+        }
+    }
+
+    fun connectWebRtcAutoToTv() {
+        val targetTvUrl = _tvStatus.value.takeIf { it.connected && it.tvUrl.startsWith("http") }?.tvUrl
+            ?: _discoveredTvs.value.firstOrNull()?.url
+            ?: TvRemoteClient.normalizeTvUrl(_manualTvIp.value)
+        if (targetTvUrl.isBlank()) {
+            _tvConnectionMessage.value = "Chưa có IP Tivi — dùng nút Tạo mã Offer bên dưới để ghép nối khác mạng."
+            return
+        }
+        viewModelScope.launch {
+            acquireWakeLock()
+            val offerRes = webRtcHost.createOfferTokenSuspend()
+            val offer = offerRes.getOrElse { err ->
+                _tvConnectionMessage.value = "Lỗi tạo Offer WebRTC: ${err.message}"
+                return@launch
+            }
+            _webRtcOfferQrBitmap.value = withContext(Dispatchers.IO) { QrGenerator.generate(offer, 480) }
+            val answerRes = TvRemoteClient.sendWebRtcOfferToTv(targetTvUrl, offer)
+            answerRes.onSuccess { answerToken ->
+                _webRtcAnswerInput.value = answerToken
+                webRtcHost.applyAnswerTokenSuspend(answerToken)
+                _tvConnectionMessage.value = "Đã trao đổi STUN Google tự động với Tivi!"
+            }.onFailure { err ->
+                _tvConnectionMessage.value = "Không gửi được Offer tới $targetTvUrl: ${err.message}"
+            }
+        }
+    }
+
+    fun disconnectWebRtc() {
+        webRtcHost.closeSession()
+        _webRtcOfferQrBitmap.value = null
+        _webRtcAnswerInput.value = ""
+        if (_tvStatus.value.tvUrl == "webrtc://google-stun") {
+            _tvStatus.value = TvRemoteStatus()
+        }
+        appendActivityLog("Đã ngắt kết nối WebRTC")
+    }
+
     fun playTrackOnTv(track: MobileAudioTrack) {
         stopPreview()
         viewModelScope.launch {
             _castingTrackId.value = track.id
-            // Auto-start mobile HTTP server if needed so TV can stream immediately
+            val queue = uiState.value.filteredTracks.ifEmpty { _tracks.value }
+
+            // Prefer active WebRTC DataChannel (works across different networks via Google STUN)
+            if (webRtcHost.state.value.isDataChannelOpen) {
+                acquireWakeLock()
+                val sent = webRtcHost.playTrackOnTv(track, queue)
+                _castingTrackId.value = null
+                if (sent) {
+                    _tvConnectionMessage.value = "WebRTC STUN: Đang phát trên TV (${track.title})"
+                } else {
+                    _tvConnectionMessage.value = "Không thể gửi bài qua WebRTC — kiểm tra kết nối"
+                }
+                return@launch
+            }
+
+            // Auto-start mobile HTTP server if needed so TV can stream immediately over Wi-Fi
             val phoneUrl = withContext(Dispatchers.IO) {
                 val url = httpServer.start()
                 val qr = QrGenerator.generate(url, 480)
@@ -715,7 +847,7 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
             }
 
             // Pick target TV URL
-            var targetTvUrl = _tvStatus.value.takeIf { it.connected }?.tvUrl
+            var targetTvUrl = _tvStatus.value.takeIf { it.connected && it.tvUrl.startsWith("http") }?.tvUrl
                 ?: _discoveredTvs.value.firstOrNull()?.url
                 ?: TvRemoteClient.normalizeTvUrl(_manualTvIp.value)
 
@@ -728,11 +860,10 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
 
             if (targetTvUrl.isBlank()) {
                 _castingTrackId.value = null
-                _tvConnectionMessage.value = "Chưa tìm thấy Tivi nào. Vui lòng nhập IP Tivi hoặc mở TV Music trước."
+                _tvConnectionMessage.value = "Chưa tìm thấy Tivi nào. Nhập IP Tivi hoặc kết nối WebRTC khác mạng bên trên."
                 return@launch
             }
 
-            val queue = uiState.value.filteredTracks.ifEmpty { _tracks.value }
             val result = TvRemoteClient.playTrackOnTv(targetTvUrl, phoneUrl, track, queue)
             _castingTrackId.value = null
 
@@ -755,7 +886,11 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun sendTvControl(action: String, positionMs: Long? = null) {
-        val tvUrl = _tvStatus.value.takeIf { it.connected }?.tvUrl
+        if (webRtcHost.state.value.isDataChannelOpen) {
+            webRtcHost.sendControl(action, positionMs)
+            return
+        }
+        val tvUrl = _tvStatus.value.takeIf { it.connected && it.tvUrl.startsWith("http") }?.tvUrl
             ?: _discoveredTvs.value.firstOrNull()?.url
             ?: TvRemoteClient.normalizeTvUrl(_manualTvIp.value)
         if (tvUrl.isBlank()) {
@@ -978,6 +1113,7 @@ class MobileServerViewModel(application: Application) : AndroidViewModel(applica
         tvUdpJob?.cancel()
         tvPollJob?.cancel()
         stopPreview()
+        webRtcHost.closeSession()
         httpServer.stop()
         releaseWakeLock()
     }

@@ -79,6 +79,11 @@ class MainActivity : ComponentActivity() {
                     onConnectToTv = viewModel::connectToTv,
                     onDisconnectFromTv = viewModel::disconnectFromTv,
                     onSendTvControl = viewModel::sendTvControl,
+                    onCreateWebRtcOffer = viewModel::createWebRtcOffer,
+                    onWebRtcAnswerInputChange = viewModel::onWebRtcAnswerInputChange,
+                    onApplyWebRtcAnswer = { viewModel.applyWebRtcAnswer() },
+                    onConnectWebRtcAutoToTv = viewModel::connectWebRtcAutoToTv,
+                    onDisconnectWebRtc = viewModel::disconnectWebRtc,
                     onTogglePreview = viewModel::togglePreview,
                     onRemoveTrack = viewModel::removeTrack,
                     onRestoreExcludedTracks = viewModel::restoreExcludedTracks

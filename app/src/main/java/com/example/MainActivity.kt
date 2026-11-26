@@ -210,6 +210,8 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
     val isLoadingRemoteTracks by viewModel.isLoadingRemoteTracks.collectAsStateWithLifecycle()
     val remoteError by viewModel.remoteError.collectAsStateWithLifecycle()
     val manualServerIp by viewModel.manualServerIp.collectAsStateWithLifecycle()
+    val webRtcState by viewModel.webRtcState.collectAsStateWithLifecycle()
+    val webRtcOfferInput by viewModel.webRtcOfferInput.collectAsStateWithLifecycle()
 
     val antiHiss24BitEnabled by viewModel.antiHiss24BitEnabled.collectAsStateWithLifecycle()
     val backgroundPlaybackEnabled by viewModel.backgroundPlaybackEnabled.collectAsStateWithLifecycle()
@@ -546,6 +548,8 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 isLoadingRemoteTracks = isLoadingRemoteTracks,
                                 remoteError = remoteError,
                                 manualServerIp = manualServerIp,
+                                webRtcState = webRtcState,
+                                webRtcOfferInput = webRtcOfferInput,
                                 currentTrack = currentTrack,
                                 isPlaying = isPlaying,
                                 coverArtStyle = coverArtStyle,
@@ -556,6 +560,10 @@ fun TvMusicApp(viewModel: MusicPlayerViewModel) {
                                 onManualIpChanged = { viewModel.setManualServerIp(it) },
                                 onConnectToServer = { viewModel.connectToPhoneServer(it) },
                                 onDisconnectRemoteServer = { viewModel.disconnectRemotePhoneServer() },
+                                onWebRtcOfferInputChanged = { viewModel.setWebRtcOfferInput(it) },
+                                onAcceptWebRtcOffer = { viewModel.acceptWebRtcOffer(it) },
+                                onDisconnectWebRtc = { viewModel.disconnectWebRtc() },
+                                onRefreshWebRtcTracks = { viewModel.refreshWebRtcTracks() },
                                 onPlayTrack = { track, list -> viewModel.playTrack(track, list) },
                                 onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) }
                             )

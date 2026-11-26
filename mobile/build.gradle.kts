@@ -69,6 +69,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.zxing.core)
+    implementation(libs.stream.webrtc.android)
 
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)

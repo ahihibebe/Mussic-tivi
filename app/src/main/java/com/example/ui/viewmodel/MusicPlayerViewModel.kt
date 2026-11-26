@@ -19,8 +19,11 @@ import com.example.qr.LanMusicDiscoveryClient
 import com.example.qr.LocalBackgroundServer
 import com.example.qr.RemoteCastTrackRequest
 import com.example.qr.TvPlaybackSnapshot
+import com.example.webrtc.TvWebRtcManager
+import com.example.webrtc.TvWebRtcUiState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,7 +31,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -104,6 +109,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _manualServerIp = MutableStateFlow(repository.getLastPhoneServerUrl())
     val manualServerIp: StateFlow<String> = _manualServerIp.asStateFlow()
 
+    private val _webRtcOfferInput = MutableStateFlow("")
+    val webRtcOfferInput: StateFlow<String> = _webRtcOfferInput.asStateFlow()
+
     // Repository flows
     val allTracks = repository.allTracks
     val allFolders = repository.allFolders
@@ -130,26 +138,38 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val backgroundPlaybackEnabled = playbackManager.backgroundPlaybackEnabled
     val keepCpuAwakeInBackground = playbackManager.keepCpuAwakeInBackground
 
+    private val tvWebRtcManager = TvWebRtcManager(
+        rawContext = application,
+        getTvStatus = { buildTvPlaybackSnapshot() },
+        onRemoteTracksReceived = { deviceName, tracks ->
+            viewModelScope.launch(Dispatchers.Main) {
+                _connectedPhoneServer.value = DiscoveredPhoneServer(
+                    url = WEBRTC_SERVER_URL,
+                    deviceName = "$deviceName (WebRTC)",
+                    tracksCount = tracks.size
+                )
+                _remotePhoneTracks.value = tracks
+                _remoteError.value = null
+                _wifiActivityStatus.value = "WebRTC STUN Google: Đã nhận ${tracks.size} bài hát từ $deviceName"
+            }
+        },
+        onPlayRemoteTrack = { req ->
+            viewModelScope.launch(Dispatchers.Main) {
+                playRemoteCastRequest(req)
+            }
+        },
+        onTvControl = { action ->
+            handleRemoteControlCommand(action)
+        }
+    )
+    val webRtcState: StateFlow<TvWebRtcUiState> = tvWebRtcManager.state
+
     private val localServer = LocalBackgroundServer(
         context = application,
         getTracks = { allTracks.value },
         getCoverArtStyle = { coverArtStyle.value },
         getRole = { wifiMusicRole.value },
-        getTvStatus = {
-            val t = currentTrack.value
-            TvPlaybackSnapshot(
-                trackId = t?.id,
-                title = t?.title ?: "Chưa phát bài nào",
-                artist = t?.artist ?: "TV Music",
-                album = t?.album ?: "",
-                format = t?.format ?: "",
-                isPlaying = isPlaying.value,
-                positionMs = currentPositionMs.value,
-                durationMs = durationMs.value,
-                isShuffle = isShuffle.value,
-                repeatMode = repeatMode.value.name
-            )
-        },
+        getTvStatus = { buildTvPlaybackSnapshot() },
         onPlayTrackOnTv = { trackId ->
             viewModelScope.launch(Dispatchers.Main) {
                 val list = allTracks.value
@@ -165,22 +185,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
         },
         onTvControl = { action ->
-            viewModelScope.launch(Dispatchers.Main) {
-                when {
-                    action == "toggle" -> togglePlayPause()
-                    action == "play" -> playbackManager.resume()
-                    action == "pause" -> playbackManager.pause()
-                    action == "next" -> skipNext()
-                    action == "prev" -> skipPrevious()
-                    action == "forward" -> seekForward()
-                    action == "rewind" -> seekRewind()
-                    action == "shuffle" -> toggleShuffle()
-                    action == "repeat" -> cycleRepeatMode()
-                    action.startsWith("seek:") -> {
-                        val pos = action.substringAfter("seek:").toLongOrNull()
-                        if (pos != null) seekTo(pos)
-                    }
-                }
+            handleRemoteControlCommand(action)
+        },
+        onWebRtcOffer = { offerToken ->
+            runBlocking {
+                tvWebRtcManager.acceptOfferAndCreateAnswer(offerToken).getOrNull()
             }
         },
         onAudioUploaded = { savedFile, autoplay ->
@@ -206,6 +215,42 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _wifiActivityStatus.value = activity
         }
     )
+
+    private fun buildTvPlaybackSnapshot(): TvPlaybackSnapshot {
+        val t = currentTrack.value
+        return TvPlaybackSnapshot(
+            trackId = t?.id,
+            title = t?.title ?: "Chưa phát bài nào",
+            artist = t?.artist ?: "TV Music",
+            album = t?.album ?: "",
+            format = t?.format ?: "",
+            isPlaying = isPlaying.value,
+            positionMs = currentPositionMs.value,
+            durationMs = durationMs.value,
+            isShuffle = isShuffle.value,
+            repeatMode = repeatMode.value.name
+        )
+    }
+
+    private fun handleRemoteControlCommand(action: String) {
+        viewModelScope.launch(Dispatchers.Main) {
+            when {
+                action == "toggle" -> togglePlayPause()
+                action == "play" -> playbackManager.resume()
+                action == "pause" -> playbackManager.pause()
+                action == "next" -> skipNext()
+                action == "prev" -> skipPrevious()
+                action == "forward" -> seekForward()
+                action == "rewind" -> seekRewind()
+                action == "shuffle" -> toggleShuffle()
+                action == "repeat" -> cycleRepeatMode()
+                action.startsWith("seek:") -> {
+                    val pos = action.substringAfter("seek:").toLongOrNull()
+                    if (pos != null) seekTo(pos)
+                }
+            }
+        }
+    }
 
     // Tracks received over Wi-Fi
     val wifiTracks: StateFlow<List<AudioTrack>> = allTracks.map { tracks ->
@@ -250,6 +295,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
         scanLibrary()
         startTvCastReceiverSilently()
+        startWebRtcStatusSyncLoop()
+    }
+
+    private fun startWebRtcStatusSyncLoop() {
+        viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                if (tvWebRtcManager.state.value.isDataChannelOpen) {
+                    tvWebRtcManager.pushTvStatus(buildTvPlaybackSnapshot())
+                }
+                delay(1000L)
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            combine(currentTrack, isPlaying, isShuffle, repeatMode) { _, _, _, _ -> Unit }
+                .collect {
+                    if (tvWebRtcManager.state.value.isDataChannelOpen) {
+                        tvWebRtcManager.pushTvStatus(buildTvPlaybackSnapshot())
+                    }
+                }
+        }
     }
 
     fun syncPlaybackState() {
@@ -408,6 +473,36 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _connectedPhoneServer.value = null
         _remotePhoneTracks.value = emptyList()
         _remoteError.value = null
+    }
+
+    fun setWebRtcOfferInput(value: String) {
+        _webRtcOfferInput.value = value
+    }
+
+    fun acceptWebRtcOffer(rawOffer: String = _webRtcOfferInput.value) {
+        val trimmed = rawOffer.trim()
+        if (trimmed.isBlank()) {
+            _remoteError.value = "Hãy dán mã Offer (TVRTC1:...) từ điện thoại trước."
+            return
+        }
+        viewModelScope.launch {
+            _remoteError.value = null
+            tvWebRtcManager.acceptOfferAndCreateAnswer(trimmed).onFailure { err ->
+                _remoteError.value = err.message ?: "Không thể xử lý mã Offer WebRTC"
+            }
+        }
+    }
+
+    fun disconnectWebRtc() {
+        tvWebRtcManager.closeSession()
+        if (_connectedPhoneServer.value?.url == WEBRTC_SERVER_URL) {
+            _connectedPhoneServer.value = null
+            _remotePhoneTracks.value = emptyList()
+        }
+    }
+
+    fun refreshWebRtcTracks() {
+        tvWebRtcManager.requestTracksRefresh()
     }
 
     fun openFolder(folder: AudioFolder) {
@@ -609,7 +704,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     override fun onCleared() {
         super.onCleared()
         stopLanDiscoveryListener()
+        tvWebRtcManager.closeSession()
         localServer.stop()
         playbackManager.onUiDisconnected()
+    }
+
+    companion object {
+        const val WEBRTC_SERVER_URL = "webrtc://google-stun"
     }
 }

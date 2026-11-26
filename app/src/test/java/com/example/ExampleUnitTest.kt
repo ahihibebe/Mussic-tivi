@@ -12,6 +12,7 @@ import com.example.qr.LanMusicDiscoveryClient
 import com.example.qr.LocalBackgroundServer
 import com.example.qr.TvPlaybackSnapshot
 import com.example.ui.theme.buildTvStyleTokens
+import com.example.webrtc.TvWebRtcManager
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
@@ -203,5 +204,27 @@ class ExampleUnitTest {
     assertEquals(32767.toShort(), out2.short)
 
     assertTrue(TvNavTab.entries.contains(TvNavTab.BACKGROUND_PLAY))
+  }
+
+  @Test
+  fun tvWebRtcGoogleStunAndSrflxCandidateParsingWork() {
+    assertEquals("stun:stun.l.google.com:19302", TvWebRtcManager.PRIMARY_GOOGLE_STUN)
+    assertTrue(TvWebRtcManager.GOOGLE_STUN_SERVERS.contains("stun:stun.l.google.com:19302"))
+    assertTrue(TvWebRtcManager.GOOGLE_STUN_SERVERS.contains("stun:stun1.l.google.com:19302"))
+
+    val srflxCandidate =
+      "candidate:842163049 1 udp 1686052607 203.0.113.45 54321 typ srflx raddr 192.168.1.10 rport 54321 generation 0"
+    assertEquals("203.0.113.45:54321", TvWebRtcManager.extractSrflxEndpoint(srflxCandidate))
+
+    val hostCandidate =
+      "candidate:12345 1 udp 2122260223 192.168.1.10 50000 typ host generation 0"
+    assertNull(TvWebRtcManager.extractSrflxEndpoint(hostCandidate))
+
+    val sample = "v=0\r\no=- 12345 2 IN IP4 127.0.0.1\r\na=ice-ufrag:abcd".toByteArray()
+    val encoded = TvWebRtcManager.encodeBase64UrlNoPad(sample)
+    assertFalse(encoded.contains("="))
+    assertFalse(encoded.contains("+"))
+    assertFalse(encoded.contains("/"))
+    assertEquals(String(sample), String(TvWebRtcManager.decodeBase64UrlNoPad(encoded)))
   }
 }

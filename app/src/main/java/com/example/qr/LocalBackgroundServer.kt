@@ -73,6 +73,7 @@ class LocalBackgroundServer(
     private val onPlayTrackOnTv: (String) -> Unit = {},
     private val onPlayRemoteTrackOnTv: (RemoteCastTrackRequest) -> Unit = {},
     private val onTvControl: (String) -> Unit = {},
+    private val onWebRtcOffer: (String) -> String? = { null },
     private val onAudioUploaded: (File, Boolean) -> Unit = { _, _ -> },
     private val onImageUploaded: (String) -> Unit,
     private val onStatusUpdate: (String) -> Unit,
@@ -322,6 +323,37 @@ class LocalBackgroundServer(
                             sendJsonOk(output, "Đã gửi lệnh điều khiển TV")
                         } else {
                             sendJsonError(output, 400, "Lệnh không hợp lệ")
+                        }
+                    }
+
+                    method == "POST" && path == "/api/webrtc/offer" -> {
+                        val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
+                        if (contentLength <= 0 || contentLength > 512 * 1024) {
+                            sendJsonError(output, 400, "Mã Offer WebRTC không hợp lệ")
+                            return
+                        }
+                        val bodyBytes = readExactBytes(input, contentLength)
+                        val bodyText = String(bodyBytes, StandardCharsets.UTF_8)
+                        val offerToken = runCatching {
+                            org.json.JSONObject(bodyText).optString("offer", "")
+                        }.getOrDefault("")
+                        if (offerToken.isBlank()) {
+                            sendJsonError(output, 400, "Thiếu mã Offer WebRTC")
+                        } else {
+                            val answerToken = onWebRtcOffer(offerToken)
+                            if (!answerToken.isNullOrBlank()) {
+                                onClientActivity("Đã tạo mã Answer WebRTC qua STUN Google")
+                                val json = """{"ok":true,"answer":"${escapeJson(answerToken)}"}"""
+                                sendResponse(
+                                    output,
+                                    200,
+                                    "OK",
+                                    "application/json; charset=utf-8",
+                                    json.toByteArray(StandardCharsets.UTF_8)
+                                )
+                            } else {
+                                sendJsonError(output, 500, "Tivi chưa tạo được Answer WebRTC")
+                            }
                         }
                     }
 

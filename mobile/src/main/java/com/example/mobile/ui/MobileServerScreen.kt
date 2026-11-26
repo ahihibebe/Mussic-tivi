@@ -130,10 +130,17 @@ import com.example.mobile.ui.theme.SoftWhiteCanvas
 import com.example.mobile.ui.theme.TextMutedSlate
 import com.example.mobile.ui.theme.TextPrimaryDark
 import com.example.mobile.ui.theme.TextSecondarySlate
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.ui.graphics.ImageBitmap
 import com.example.mobile.ui.theme.WhiteCardSurface
 import com.example.mobile.ui.theme.WhitePageBg
 import com.example.mobile.viewmodel.MobileServerUiState
 import com.example.mobile.viewmodel.SelectedFolderItem
+import com.example.mobile.webrtc.MobileWebRtcState
+import com.example.mobile.webrtc.WebRtcConnectionStage
 
 @Composable
 fun MobileServerScreen(
@@ -153,6 +160,11 @@ fun MobileServerScreen(
     onConnectToTv: (String) -> Unit = {},
     onDisconnectFromTv: () -> Unit = {},
     onSendTvControl: (String, Long?) -> Unit = { _, _ -> },
+    onCreateWebRtcOffer: () -> Unit = {},
+    onWebRtcAnswerInputChange: (String) -> Unit = {},
+    onApplyWebRtcAnswer: () -> Unit = {},
+    onConnectWebRtcAutoToTv: () -> Unit = {},
+    onDisconnectWebRtc: () -> Unit = {},
     onTogglePreview: (MobileAudioTrack) -> Unit,
     onRemoveTrack: (MobileAudioTrack) -> Unit = {},
     onRestoreExcludedTracks: () -> Unit = {}
@@ -221,6 +233,23 @@ fun MobileServerScreen(
                         onConnectTv = onConnectToTv,
                         onDisconnectTv = onDisconnectFromTv,
                         onSendControl = onSendTvControl
+                    )
+                }
+
+                item(key = "webrtc_stun_card") {
+                    val hasKnownTv = (uiState.tvStatus.connected && uiState.tvStatus.tvUrl.startsWith("http")) ||
+                        uiState.discoveredTvs.isNotEmpty() ||
+                        uiState.manualTvIp.isNotBlank()
+                    WebRtcCrossNetworkCard(
+                        webRtcState = uiState.webRtcState,
+                        offerQrBitmap = uiState.webRtcOfferQrBitmap,
+                        answerInput = uiState.webRtcAnswerInput,
+                        hasKnownTv = hasKnownTv,
+                        onCreateOffer = onCreateWebRtcOffer,
+                        onAnswerInputChange = onWebRtcAnswerInputChange,
+                        onApplyAnswer = onApplyWebRtcAnswer,
+                        onConnectAutoToTv = onConnectWebRtcAutoToTv,
+                        onDisconnect = onDisconnectWebRtc
                     )
                 }
 
@@ -1994,4 +2023,380 @@ private fun formatDurationMs(ms: Long): String {
     val mins = totalSec / 60L
     val secs = totalSec % 60L
     return "%d:%02d".format(mins, secs)
+}
+
+@Composable
+private fun WebRtcCrossNetworkCard(
+    webRtcState: MobileWebRtcState,
+    offerQrBitmap: ImageBitmap?,
+    answerInput: String,
+    hasKnownTv: Boolean,
+    onCreateOffer: () -> Unit,
+    onAnswerInputChange: (String) -> Unit,
+    onApplyAnswer: () -> Unit,
+    onConnectAutoToTv: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    val clipboard = LocalClipboardManager.current
+    var showOfferQr by remember { mutableStateOf(false) }
+    var copiedOffer by remember { mutableStateOf(false) }
+
+    val isConnected = webRtcState.isDataChannelOpen
+    val isActive = webRtcState.stage != WebRtcConnectionStage.IDLE
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("mobile_webrtc_card"),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = WhiteCardSurface),
+        border = BorderStroke(
+            width = if (isConnected) 1.5.dp else 1.dp,
+            color = if (isConnected) EmeraldActive else SoftSlateBorder
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isConnected) EmeraldSoftBg else SkyBlueSoft),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Public,
+                            contentDescription = "WebRTC STUN Google",
+                            tint = if (isConnected) EmeraldTextDark else SkyBlueDeep,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Stream khác mạng · WebRTC",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextPrimaryDark,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "STUN: ${webRtcState.stunServer}",
+                            fontFamily = JetBrainsMonoFamily,
+                            fontSize = 11.sp,
+                            color = TextSecondarySlate,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = if (isConnected) EmeraldSoftBg else if (isActive) SkyBlueTint else SoftSlateVariant,
+                    border = BorderStroke(
+                        1.dp,
+                        if (isConnected) EmeraldBorder else if (isActive) SkyBluePrimary.copy(alpha = 0.4f) else SoftSlateBorder
+                    )
+                ) {
+                    Text(
+                        text = if (isConnected) "P2P ONLINE" else webRtcState.iceStateText,
+                        fontFamily = JetBrainsMonoFamily,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isConnected) EmeraldTextDark else if (isActive) SkyBlueDeep else TextSecondarySlate,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // Diagnostics + Status Banner
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (isConnected) EmeraldSoftBg else SkyBlueTint,
+                border = BorderStroke(1.dp, if (isConnected) EmeraldBorder else SkyBlueSoft)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(
+                        text = webRtcState.statusDetail,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isConnected) EmeraldTextDark else SkyBlueDeep
+                    )
+                    if (!webRtcState.publicStunEndpoint.isNullOrBlank()) {
+                        Text(
+                            text = "NAT Public (srflx): ${webRtcState.publicStunEndpoint}",
+                            fontFamily = JetBrainsMonoFamily,
+                            fontSize = 11.sp,
+                            color = if (isConnected) EmeraldTextDark else TextSecondarySlate
+                        )
+                    }
+                }
+            }
+
+            if (isConnected) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Chạm bài hát bên dưới để stream thẳng sang Tivi qua WebRTC.",
+                        fontSize = 12.sp,
+                        color = EmeraldTextDark,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedButton(
+                        onClick = onDisconnect,
+                        modifier = Modifier
+                            .height(40.dp)
+                            .testTag("mobile_btn_webrtc_disconnect"),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        border = BorderStroke(1.dp, CrimsonStop.copy(alpha = 0.5f))
+                    ) {
+                        Icon(Icons.Filled.LinkOff, contentDescription = null, tint = CrimsonStop, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text("Ngắt", fontSize = 12.sp, color = CrimsonStop, maxLines = 1, softWrap = false)
+                    }
+                }
+            } else {
+                // Action buttons row: Create Offer + Optional 1-tap auto
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            copiedOffer = false
+                            onCreateOffer()
+                        },
+                        enabled = webRtcState.stage != WebRtcConnectionStage.GATHERING_STUN,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp)
+                            .testTag("mobile_btn_webrtc_create_offer"),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SkyBluePrimary,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        if (webRtcState.stage == WebRtcConnectionStage.GATHERING_STUN) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Đang lấy STUN...", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                        } else {
+                            Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("1. Tạo mã Offer", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                        }
+                    }
+
+                    if (hasKnownTv) {
+                        FilledTonalButton(
+                            onClick = onConnectAutoToTv,
+                            enabled = webRtcState.stage != WebRtcConnectionStage.GATHERING_STUN,
+                            modifier = Modifier
+                                .height(46.dp)
+                                .testTag("mobile_btn_webrtc_auto"),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = SkyBlueSoft,
+                                contentColor = SkyBlueDeep
+                            )
+                        ) {
+                            Text("Ghép 1 chạm", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                        }
+                    }
+                }
+
+                // Offer token display + Copy + QR toggle
+                val offerTok = webRtcState.offerToken
+                if (!offerTok.isNullOrBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = SoftWhiteCanvas,
+                        border = BorderStroke(1.dp, SoftSlateBorder)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Mã Offer WebRTC (gửi sang Tivi):",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = TextPrimaryDark
+                            )
+                            Text(
+                                text = offerTok,
+                                fontFamily = JetBrainsMonoFamily,
+                                fontSize = 11.sp,
+                                color = SkyBlueDeep,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        clipboard.setText(AnnotatedString(offerTok))
+                                        copiedOffer = true
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(40.dp)
+                                        .testTag("mobile_btn_webrtc_copy_offer"),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = SkyBlueSoft,
+                                        contentColor = SkyBlueDeep
+                                    )
+                                ) {
+                                    Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (copiedOffer) "Đã sao chép!" else "Sao chép Offer",
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                                if (offerQrBitmap != null) {
+                                    OutlinedButton(
+                                        onClick = { showOfferQr = !showOfferQr },
+                                        modifier = Modifier.height(40.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        border = BorderStroke(1.dp, SoftSlateBorder)
+                                    ) {
+                                        Icon(Icons.Filled.QrCode2, contentDescription = null, tint = TextPrimaryDark, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                        Text(
+                                            text = if (showOfferQr) "Ẩn QR" else "Mã QR",
+                                            fontSize = 12.sp,
+                                            color = TextPrimaryDark,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
+                                }
+                            }
+
+                            AnimatedVisibility(visible = showOfferQr && offerQrBitmap != null) {
+                                if (offerQrBitmap != null) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Image(
+                                            bitmap = offerQrBitmap,
+                                            contentDescription = "QR Offer WebRTC",
+                                            modifier = Modifier
+                                                .size(180.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(Color.White)
+                                                .padding(8.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Step 2: Paste Answer from TV
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = answerInput,
+                            onValueChange = onAnswerInputChange,
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            placeholder = {
+                                Text(
+                                    text = "2. Dán mã Answer (TVANS1:...)",
+                                    fontSize = 12.sp,
+                                    color = TextMutedSlate,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = {
+                                        val txt = clipboard.getText()?.text.orEmpty()
+                                        if (txt.isNotBlank()) onAnswerInputChange(txt)
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.ContentPaste,
+                                        contentDescription = "Dán mã Answer",
+                                        tint = SkyBlueDeep
+                                    )
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = SkyBluePrimary,
+                                unfocusedBorderColor = SoftSlateBorder,
+                                focusedContainerColor = SoftWhiteCanvas,
+                                unfocusedContainerColor = SoftWhiteCanvas
+                            )
+                        )
+
+                        Button(
+                            onClick = onApplyAnswer,
+                            modifier = Modifier
+                                .height(52.dp)
+                                .testTag("mobile_btn_webrtc_apply_answer"),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = EmeraldActive,
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Text("Kết nối", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

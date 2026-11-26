@@ -3,9 +3,12 @@ package com.example.mobile
 import com.example.mobile.model.MobileAudioTrack
 import com.example.mobile.network.TvRemoteClient
 import com.example.mobile.server.MobileHttpMusicServer
+import com.example.mobile.webrtc.MobileWebRtcHost
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MobileServerUnitTest {
@@ -66,5 +69,26 @@ class MobileServerUnitTest {
         assertNotNull(tv)
         assertEquals("Sony Bravia", tv!!.deviceName)
         assertEquals("http://192.168.1.50:8765", tv.url)
+    }
+
+    @Test
+    fun mobileWebRtcHost_usesGoogleStunAndParsesSrflxAndBase64Url() {
+        assertEquals("stun:stun.l.google.com:19302", MobileWebRtcHost.PRIMARY_GOOGLE_STUN)
+        assertTrue(MobileWebRtcHost.GOOGLE_STUN_SERVERS.size >= 5)
+        assertEquals(
+            "198.51.100.77:61234",
+            MobileWebRtcHost.extractSrflxEndpoint(
+                "candidate:99 1 udp 1686052607 198.51.100.77 61234 typ srflx raddr 10.0.0.5 rport 61234"
+            )
+        )
+        assertNull(
+            MobileWebRtcHost.extractSrflxEndpoint(
+                "candidate:1 1 udp 2122260223 10.0.0.5 61234 typ host"
+            )
+        )
+        val raw = "TVRTC1-payload-test-123".toByteArray()
+        val encoded = MobileWebRtcHost.encodeBase64UrlNoPad(raw)
+        assertFalse(encoded.contains("="))
+        assertEquals(String(raw), String(MobileWebRtcHost.decodeBase64UrlNoPad(encoded)))
     }
 }

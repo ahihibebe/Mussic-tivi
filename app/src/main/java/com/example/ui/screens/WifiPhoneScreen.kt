@@ -63,6 +63,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import com.example.model.AudioTrack
 import com.example.model.CoverArtStyle
 import com.example.model.WifiMusicRole
@@ -70,6 +75,9 @@ import com.example.qr.DiscoveredPhoneServer
 import com.example.qr.QrCodeGenerator
 import com.example.ui.components.tvFocusable
 import com.example.ui.theme.LocalTvStyle
+import com.example.ui.viewmodel.MusicPlayerViewModel
+import com.example.webrtc.TvWebRtcStage
+import com.example.webrtc.TvWebRtcUiState
 
 @Composable
 fun WifiPhoneScreen(
@@ -86,6 +94,8 @@ fun WifiPhoneScreen(
     isLoadingRemoteTracks: Boolean,
     remoteError: String?,
     manualServerIp: String,
+    webRtcState: TvWebRtcUiState = TvWebRtcUiState(),
+    webRtcOfferInput: String = "",
     currentTrack: AudioTrack?,
     isPlaying: Boolean,
     coverArtStyle: CoverArtStyle,
@@ -96,6 +106,10 @@ fun WifiPhoneScreen(
     onManualIpChanged: (String) -> Unit,
     onConnectToServer: (String) -> Unit,
     onDisconnectRemoteServer: () -> Unit,
+    onWebRtcOfferInputChanged: (String) -> Unit = {},
+    onAcceptWebRtcOffer: (String) -> Unit = {},
+    onDisconnectWebRtc: () -> Unit = {},
+    onRefreshWebRtcTracks: () -> Unit = {},
     onPlayTrack: (AudioTrack, List<AudioTrack>) -> Unit,
     onToggleFavorite: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -156,12 +170,15 @@ fun WifiPhoneScreen(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 val isBadgeActive = when (wifiMusicRole) {
-                    WifiMusicRole.TV_CLIENT_PULL_PHONE -> connectedPhoneServer != null
+                    WifiMusicRole.TV_CLIENT_PULL_PHONE -> connectedPhoneServer != null || webRtcState.isDataChannelOpen
                     else -> isServerRunning
                 }
                 val badgeText = when (wifiMusicRole) {
-                    WifiMusicRole.TV_CLIENT_PULL_PHONE ->
-                        if (connectedPhoneServer != null) "Đã kết nối ĐT" else "Chế độ TV nhận"
+                    WifiMusicRole.TV_CLIENT_PULL_PHONE -> when {
+                        webRtcState.isDataChannelOpen -> "WebRTC STUN"
+                        connectedPhoneServer != null -> "Đã kết nối ĐT"
+                        else -> "Chế độ TV nhận"
+                    }
                     WifiMusicRole.PHONE_SERVER_HOST ->
                         if (isServerRunning) "Đang làm Server" else "Server đang tắt"
                     WifiMusicRole.TV_WEB_HUB ->
@@ -283,6 +300,18 @@ fun WifiPhoneScreen(
                     )
                 }
 
+                // Panel 1b: WebRTC Cross-Network Streaming via Google STUN
+                item {
+                    WebRtcStunReceiverCard(
+                        webRtcState = webRtcState,
+                        offerInput = webRtcOfferInput,
+                        onOfferInputChanged = onWebRtcOfferInputChanged,
+                        onAcceptOffer = { onAcceptWebRtcOffer(webRtcOfferInput) },
+                        onDisconnectWebRtc = onDisconnectWebRtc,
+                        onRefreshWebRtcTracks = onRefreshWebRtcTracks
+                    )
+                }
+
                 if (connectedPhoneServer != null) {
                     item {
                         ConnectedPhoneLibraryHeader(
@@ -301,7 +330,13 @@ fun WifiPhoneScreen(
                                     onPlayTrack(shuffled.first(), shuffled)
                                 }
                             },
-                            onRefreshRemote = { onConnectToServer(connectedPhoneServer.url) }
+                            onRefreshRemote = {
+                                if (connectedPhoneServer.url == MusicPlayerViewModel.WEBRTC_SERVER_URL) {
+                                    onRefreshWebRtcTracks()
+                                } else {
+                                    onConnectToServer(connectedPhoneServer.url)
+                                }
+                            }
                         )
                     }
 
@@ -1464,6 +1499,362 @@ private fun WifiFeatureStep(
                 fontSize = 12.sp,
                 lineHeight = 17.sp
             )
+        }
+    }
+}
+
+@Composable
+private fun WebRtcStunReceiverCard(
+    webRtcState: TvWebRtcUiState,
+    offerInput: String,
+    onOfferInputChanged: (String) -> Unit,
+    onAcceptOffer: () -> Unit,
+    onDisconnectWebRtc: () -> Unit,
+    onRefreshWebRtcTracks: () -> Unit
+) {
+    val style = LocalTvStyle.current
+    val clipboard = LocalClipboardManager.current
+    var answerQrBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    var copiedAnswer by remember { mutableStateOf(false) }
+
+    LaunchedEffect(webRtcState.answerToken) {
+        val tok = webRtcState.answerToken
+        answerQrBitmap = if (!tok.isNullOrBlank()) {
+            QrCodeGenerator.generateQrBitmap(tok, 420)
+        } else {
+            null
+        }
+        copiedAnswer = false
+    }
+
+    val cardShape = RoundedCornerShape(18.dp)
+    val cardBorder = if (webRtcState.isDataChannelOpen) {
+        Modifier.border(1.5.dp, style.emeraldColor, cardShape)
+    } else if (style.isGlassStyle) {
+        Modifier.border(
+            1.dp,
+            Brush.verticalGradient(listOf(style.glassSpecularTop, style.glassSpecularBottom)),
+            cardShape
+        )
+    } else {
+        Modifier.border(1.dp, style.borderColor, cardShape)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(cardShape)
+            .background(style.cardSurface)
+            .then(cardBorder)
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (webRtcState.isDataChannelOpen) style.emeraldBg else style.accentLightBg)
+                        .border(
+                            1.dp,
+                            if (webRtcState.isDataChannelOpen) style.emeraldBorder else style.accentLightBorder,
+                            RoundedCornerShape(10.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Public,
+                        contentDescription = "WebRTC STUN Google",
+                        tint = if (webRtcState.isDataChannelOpen) style.emeraldColor else style.accentColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "WebRTC Stream Khác Mạng (STUN Google)",
+                        color = style.textPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "STUN: ${webRtcState.stunServer} · ICE: ${webRtcState.iceStateText}" +
+                            (webRtcState.publicStunEndpoint?.let { " · NAT: $it" } ?: ""),
+                        color = style.textSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            if (webRtcState.stage != TvWebRtcStage.IDLE) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (webRtcState.isDataChannelOpen) {
+                        Row(
+                            modifier = Modifier
+                                .tvFocusable(
+                                    tag = "tv_webrtc_refresh_tracks",
+                                    shape = RoundedCornerShape(10.dp),
+                                    defaultBgColor = style.surfaceVariant,
+                                    onClick = onRefreshWebRtcTracks
+                                )
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Tải lại nhạc WebRTC",
+                                tint = style.accentColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Tải lại nhạc",
+                                color = style.textPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .tvFocusable(
+                                tag = "tv_webrtc_disconnect",
+                                shape = RoundedCornerShape(10.dp),
+                                defaultBgColor = style.redBg,
+                                defaultBorderColor = style.redBorder,
+                                onClick = onDisconnectWebRtc
+                            )
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LinkOff,
+                            contentDescription = "Ngắt WebRTC",
+                            tint = style.redColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Ngắt WebRTC",
+                            color = style.redColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        // Status banner
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (webRtcState.isDataChannelOpen) style.emeraldBg else style.surfaceVariant)
+                .border(
+                    1.dp,
+                    if (webRtcState.isDataChannelOpen) style.emeraldBorder else style.borderColor,
+                    RoundedCornerShape(10.dp)
+                )
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (webRtcState.stage == TvWebRtcStage.GATHERING_STUN) {
+                CircularProgressIndicator(
+                    color = style.accentColor,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+            Text(
+                text = webRtcState.statusDetail,
+                color = if (webRtcState.isDataChannelOpen) style.emeraldColor else style.textPrimary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+
+        if (!webRtcState.isDataChannelOpen) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(style.surfaceVariant)
+                        .border(1.dp, style.borderColor, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    BasicTextField(
+                        value = offerInput,
+                        onValueChange = onOfferInputChanged,
+                        textStyle = TextStyle(color = style.textPrimary, fontSize = 13.sp),
+                        cursorBrush = SolidColor(style.accentColor),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        decorationBox = { innerTextField ->
+                            if (offerInput.isEmpty()) {
+                                Text(
+                                    text = "Dán mã Offer WebRTC (TVRTC1:...) từ điện thoại",
+                                    color = style.textMuted,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            innerTextField()
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .tvFocusable(
+                            tag = "tv_webrtc_paste_offer",
+                            shape = RoundedCornerShape(10.dp),
+                            defaultBgColor = style.surfaceVariant,
+                            onClick = {
+                                val text = clipboard.getText()?.text.orEmpty()
+                                if (text.isNotBlank()) onOfferInputChanged(text)
+                            }
+                        )
+                        .padding(horizontal = 12.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentPaste,
+                        contentDescription = "Dán mã Offer",
+                        tint = style.textPrimary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Dán",
+                        color = style.textPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .tvFocusable(
+                            tag = "tv_webrtc_create_answer",
+                            shape = RoundedCornerShape(10.dp),
+                            defaultBgColor = style.accentColor,
+                            defaultBorderColor = style.accentColor,
+                            onClick = onAcceptOffer
+                        )
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CastConnected,
+                        contentDescription = "Tạo mã Answer WebRTC",
+                        tint = style.accentContentColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Tạo Answer",
+                        color = style.accentContentColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        val answerTok = webRtcState.answerToken
+        if (!answerTok.isNullOrBlank() && !webRtcState.isDataChannelOpen) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(style.surfaceVariant)
+                    .border(1.dp, style.borderColor, RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (answerQrBitmap != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(120.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.White)
+                            .padding(6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            bitmap = answerQrBitmap!!,
+                            contentDescription = "Mã QR Answer WebRTC",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Mã Answer WebRTC của Tivi (${answerTok.length} ký tự):",
+                        color = style.textPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = answerTok,
+                        color = style.accentColor,
+                        fontSize = 11.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Row(
+                        modifier = Modifier
+                            .tvFocusable(
+                                tag = "tv_webrtc_copy_answer",
+                                shape = RoundedCornerShape(8.dp),
+                                defaultBgColor = style.accentLightBg,
+                                defaultBorderColor = style.accentLightBorder,
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(answerTok))
+                                    copiedAnswer = true
+                                }
+                            )
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Sao chép mã Answer",
+                            tint = style.accentColor,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (copiedAnswer) "Đã sao chép Answer!" else "Sao chép mã Answer",
+                            color = style.accentColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
         }
     }
 }

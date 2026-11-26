@@ -311,4 +311,46 @@ object TvRemoteClient {
             false
         }
     }
+
+    suspend fun sendWebRtcOfferToTv(
+        tvUrl: String,
+        offerToken: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val normalizedTv = normalizeTvUrl(tvUrl)
+        if (normalizedTv.isBlank() || offerToken.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("Thiếu địa chỉ TV hoặc mã Offer"))
+        }
+        try {
+            val payload = JSONObject().put("offer", offerToken)
+            val conn = (URL("$normalizedTv/api/webrtc/offer").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = 5000
+                readTimeout = 8000
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            }
+            OutputStreamWriter(conn.outputStream, StandardCharsets.UTF_8).use { writer ->
+                writer.write(payload.toString())
+                writer.flush()
+            }
+            val code = conn.responseCode
+            val body = runCatching {
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
+            }.getOrDefault("")
+            conn.disconnect()
+            if (code in 200..299) {
+                val ans = JSONObject(body).optString("answer", "")
+                if (ans.isNotBlank()) {
+                    Result.success(ans)
+                } else {
+                    Result.failure(IllegalStateException("Tivi không trả về mã Answer"))
+                }
+            } else {
+                Result.failure(IllegalStateException("Tivi trả lỗi HTTP $code: $body"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
